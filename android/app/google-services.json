@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "23130474318",
+    "firebase_url": "https://vtuber-335811-default-rtdb.firebaseio.com",
+    "project_id": "vtuber-335811",
+    "storage_bucket": "vtuber-335811.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:23130474318:android:bf5b2d9f79a5a80f65001f",
+        "android_client_info": {
+          "package_name": "vtuberchannel.vtuberchannel"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "23130474318-5vhs3ba1c3aqb2sfdsbmmhopqvlokve5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCgD_rVs0XqlmQnEAtFWd45ZDoRWDFsqjE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "23130474318-5vhs3ba1c3aqb2sfdsbmmhopqvlokve5.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "23130474318-3ipaso03mf2jau7lhi73rnr823uqufr2.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "vtuberchannel"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

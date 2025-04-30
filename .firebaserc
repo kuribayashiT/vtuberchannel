@@ -1,0 +1,16 @@
+{
+  "projects": {
+    "default": "vtuber-335811",
+    "n": "vtuber-335811"
+  },
+  "targets": {
+    "vtuber-335811": {
+      "hosting": {
+        "vchannel-com": [
+          "vchannel-com"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
