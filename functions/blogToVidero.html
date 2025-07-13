@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>動画生成UI</title>
+</head>
+<body>
+  <h1>動画生成フォーム</h1>
+  <form id="videoForm">
+    <label>動画タイトル:</label><br>
+    <input type="text" id="videoTitle" name="videoTitle"><br><br>
+
+    <label>ブログ記事:</label><br>
+    <textarea id="blogText" name="blogText" rows="10" cols="60"></textarea><br><br>
+
+    <label>タグ（カンマ区切り）:</label><br>
+    <input type="text" id="videoTags" name="videoTags"><br><br>
+
+    <button type="submit">動画生成開始</button>
+  </form>
+
+  <p id="status"></p>
+
+  <script>
+    document.getElementById('videoForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const _videoTitle = document.getElementById('videoTitle').value;
+      const _blogText = document.getElementById('blogText').value;
+      const _videoTags = document.getElementById('videoTags').value
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag !== '');
+
+      const statusEl = document.getElementById('status');
+      statusEl.innerText = '送信中...';
+
+      const res = await fetch('https://asia-northeast1-vtuber-335811.cloudfunctions.net/generateBlogVideoFromLatestNews', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          _videoTitle,
+          _blogText,
+          _videoTags
+        })
+      });
+
+      const result = await res.text();
+      statusEl.innerText = `結果: ${result}`;
+    });
+  </script>
+</body>
+</html>

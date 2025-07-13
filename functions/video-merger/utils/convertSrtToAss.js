@@ -55,7 +55,20 @@ export async function convertSrtToAss(srtPath, assPath, {
   console.log('🧮 srtDurationSec:', srtDurationSec);
   console.log('📐 scaleFactor:', scaleFactor.toFixed(4));
 
-  const style = `
+//   const style = `
+// [Script Info]
+// ScriptType: v4.00+
+// PlayResX: ${videoWidth}
+// PlayResY: ${videoHeight}
+
+// [V4+ Styles]
+// Format: Name, Fontname, Fontsize, PrimaryColour, BackColour, OutlineColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+// Style: Default,${fontName},${fontSize},&H00FFFFFF,&H64000000,&H00000000,1,0,0,0,100,100,0,0,1,1,0,7,30,60,40,1
+
+// [Events]
+// Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+// `;
+const style = `
 [Script Info]
 ScriptType: v4.00+
 PlayResX: ${videoWidth}
@@ -63,12 +76,12 @@ PlayResY: ${videoHeight}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, BackColour, OutlineColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontName},${fontSize},&H00FFFFFF,&H64000000,&H00000000,1,0,0,0,100,100,0,0,1,1,0,7,30,60,40,1
+Style: Default,${fontName},${fontSize},&H00FFFFFF,&H64000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,5,30,30,30,1
 
 [Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-`;
+Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\pos(360,800)}
 
+`;
   const assEvents = srtBlocks.map((block) => {
     const lines = block.trim().split('\n');
     if (lines.length < 3) return null;
@@ -90,15 +103,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     const end = scaleTime(endRaw);
     // const clipTag = `{\\clip(${subtitleBox.x},${subtitleBox.y},${subtitleBox.x + subtitleBox.width},${subtitleBox.y + subtitleBox.height})}`;
 
-    const centerX = subtitleBox.x + subtitleBox.width / 2;
-    const halfWidth = subtitleBox.width / 2;
+    // const centerX = subtitleBox.x + subtitleBox.width / 2;
+    // const halfWidth = subtitleBox.width / 2;
     //const clipTag = `{\\clip(${0},${0},${centerX + halfWidth},${subtitleBox.y + subtitleBox.height})}`;
+    //const clipTag = `{\clip(${subtitleBox.x},${subtitleBox.y},${subtitleBox.x + subtitleBox.width},${subtitleBox.y + subtitleBox.height})}`;
+
     
 
 
     // return `Dialogue: 0,${start},${end},Default,,0,0,0,,${clipTag}${text}`;
     //return `Dialogue: 0,${start},${end},Default,,0,0,0,,${clipTag}${text}`;
     return `Dialogue: 0,${start},${end},Default,,0,0,0,,${text}`;
+    //return `Dialogue: 0,${start},${end},Default,,0,0,0,,${clipTag}${text}`;
+
   }).filter(Boolean).join('\n');
 
   await fs.writeFile(assPath, style + assEvents, 'utf8');

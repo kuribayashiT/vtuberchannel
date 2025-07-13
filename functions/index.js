@@ -2043,99 +2043,152 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 //   apiKey: functions.config().openai.api_key, // Firebase環境変数からAPIキーを取得
 // });
 // 🔥 ここで GCS バケットの初期化（関数の外！）
+const { exec } = require('child_process');
+const util = require('util');
+const execAsync = util.promisify(exec);
 const storage_ = new Storage();
 const bucketName = 'vtuber-335811.appspot.com';
 const bucket_ = storage_.bucket(bucketName);
+// const path = require('path');
+// const TEMP_DIR = '/temp';
+// const TMP_OUTPUT_DIR = path.join(TEMP_DIR, 'output');
 const VOICEVOX_ENGINE_URL = "https://voicevox-engine-23130474318.asia-northeast1.run.app";
 // const VOICEVOX_ENGINE_URL = 'https://voicevox-engine-44ispcgxza-an.a.run.app';
-let speedScale = 1;
+let speedScale = 1.4;
+let finalURL = "";
+const SPEAKER_ID = 1; // ずんだもん等（適宜変更）
 const { youtubeUpload } = require('./youtubeUpload');
-exports.generateBlogVideoFromLatestNews = async (req, res) => {
+
+
+//exports.generateBlogVideoFromLatestNews = async (req, res) => {
+exports.generateBlogVideoFromLatestNews = functions.https.onRequest(async (req, res) => {
+  // CORS対応
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
   // if (req.method !== 'POST') {
   //   res.status(405).send('Method Not Allowed');
   //   return;
   // }
   const uuid = uuidv4();
+  let blogText = "";
+  let videoTitle = "";
+  let videoTags = [];
   try {
-    // const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber+OR+%E3%83%9B%E3%83%AD%E3%83%A9%E3%82%A4%E3%83%96+OR+%E3%81%AB%E3%81%98%E3%81%95%E3%82%93%E3%81%98&hl=ja&gl=JP&ceid=JP:ja');
-    const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber&hl=ja&gl=JP&ceid=JP:ja');
+      // POSTで受け取ったデータ（UIから来た場合）
+      const { _videoTitle, _blogText, _videoTags } = req.body || {};
+      blogText = _blogText;
+      videoTitle = _videoTitle;
+      videoTags = _videoTags;
+  }catch (err) {
+    console.error('_blogTextがからのため自動生成モードで実行');
+  }
 
-      // pubDateでソート
-    const sortedItems = feed.items.sort((a, b) => {
-      return new Date(b.pubDate) - new Date(a.pubDate); // 新しい順
-    });
-  
-    const latestItem = sortedItems[0];
-    console.log(latestItem.title);
-    console.log(latestItem.link);
-    const title = latestItem.title;
-    const articleLink = latestItem.link;
+  try {
+    if (!blogText) {
+      // 自動実行モード
+      const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber+OR+%E3%83%9B%E3%83%AD%E3%83%A9%E3%82%A4%E3%83%96+OR+%E3%81%AB%E3%81%98%E3%81%95%E3%82%93%E3%81%98&hl=ja&gl=JP&ceid=JP:ja');
+      //const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber&hl=ja&gl=JP&ceid=JP:ja');
 
-    const isAlreadyProcessed = await alreadyProcessed(articleLink);
-    if (isAlreadyProcessed) {
-      console.log(`スキップ：すでに生成済み - > ${articleLink}`);
+        // pubDateでソート
+      const sortedItems = feed.items.sort((a, b) => {
+        return new Date(b.pubDate) - new Date(a.pubDate); // 新しい順
+      });
+      const latestItem = sortedItems[0];
+      console.log(latestItem.title);
+      console.log(latestItem.link);
+      const title = latestItem.title;
+      const articleLink = latestItem.link;
 
-      res.status(200).send(`スキップ：すでに生成済み - > ${articleLink}`);
-      return; // 処理終了
+      const isAlreadyProcessed = await alreadyProcessed(articleLink);
+      if (isAlreadyProcessed) {
+        console.log(`スキップ：すでに生成済み - > ${articleLink}`);
+
+        res.status(200).send(`スキップ：すでに生成済み - > ${articleLink}`);
+        return; // 処理終了
+      }else{
+        console.log(`スタート：動画を生成します - > ${articleLink}`);
+      }
+      finalURL = articleLink;
+      const articleText = await getArticleContent(articleLink);
+      let prompt = "";
+      console.log("記事:", articleText);
+      
+      // const status = articleText ? 'OK' : 'NG';
+      // const safeFileName = getSafeFileNameFromUrl(articleLink);
+      
+      // // 既存の文字列テンプレートの形を維持
+      // const filePath = `temp/${status}_${safeFileName}.txt`;
+      // const tempFilePath = `/tmp/${status}_${safeFileName}.txt`; 
+      
+      // // 一時ファイルとして保存
+      // await fs.promises.writeFile(tempFilePath, articleText || '', { encoding: 'utf8' });
+      
+      // // Cloud Storageにアップロード
+      // await storage.bucket(bucketName).upload(tempFilePath, {
+      //   destination: filePath,
+      // });
+
+      // console.log(`記事を ${filePath} に保存しました`);
+      
+      if (articleText) {
+        // スクレイピングした記事内容を元に台本を生成
+        // await generateScript(articleText);
+        prompt = `以下のVtuberに関連する記事を要約し、youtubeにアップするためのニュース動画の台本を作成してください。youtubeにアップした際再生数が取れそうな内容にしたいです。必要であればSNSでの反響なども踏まえつつ、台本のボリュームは全体で400文字以内で、改行せず、台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\n記事: ${articleText}`;
+      } else {
+        console.log('記事の取得に失敗しました。タイトルで生成します。');
+        prompt = `以下の記事タイトルに基づいて、youtubeにアップするニュース記事の台本を400文字以内で、Vtuberに関連するニュースのみを改行せず台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\nタイトル: ${title}`;
+      }
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+      });
+      blogText = completion.choices[0].message.content;
+      console.log("[自動モード]GGenerated blog text:", blogText);
     }else{
-      console.log(`スタート：動画を生成します - > ${articleLink}`);
+      // 手動モード
+      console.log("[手動モード]Generated blog text:", blogText);
     }
 
-    const articleText = await getArticleContent(articleLink);
-    let prompt ="";
-    console.log("記事:", articleText);
-    // 保存するパスを作成（ファイル名にURLを使うのでエンコードする）
-    const encodedURL = encodeURIComponent(articleLink);
-    const status = articleText ? 'OK' : 'NG';
 
-    const filePath = `temp/${status}_${encodedURL}.txt`;
-    const tempFilePath = `/tmp/${status}_${encodedURL}.txt`; 
-    await fs.promises.writeFile(tempFilePath, articleText || '', { encoding: 'utf8' });
-   // ファイルに保存
-    await storage.bucket(bucketName).upload(tempFilePath, {
-      destination: filePath,
-    });
-
-    console.log(`記事を ${filePath} に保存しました`);
-    if (articleText) {
-      // スクレイピングした記事内容を元に台本を生成
-      // await generateScript(articleText);
-      prompt = `以下の記事に基づいて、youtubeにアップするニュース記事の台本を350文字程度で、再生数が取れそうな内容で生成し、台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\n記事: ${articleText}`;
-    } else {
-      console.log('記事の取得に失敗しました。タイトルで生成します。');
-      prompt = `以下のタイトルに基づいて、youtubeにアップするニュース記事の台本を400文字程度で、SNSなどの反応も交えるなど再生数が取れそうな内容で生成してください。\nタイトル: ${title}`;
+    if (!videoTitle) {
+      // Title自動モード
+      const title_prompt = `以下の台本の内容を見上げる形でyoutube動画にしようとしています。その際の動画タイトルを、再生数が取れそうな引きのある文言で20文字程度までの長さで作成してください。台本：${blogText}`;
+      const title_completion = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [{ role: 'user', content: title_prompt }],
+        temperature: 0.7,
+      });
+      videoTitle = title_completion.choices[0].message.content;
+      console.log("[自動モード]GGenerated Title:", videoTitle);
+    }else{
+      // Title手動モード
+      console.log("[手動モード]Generated Title:", videoTitle);
     }
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-    });
-    let blogText = completion.choices[0].message.content;
-    console.log("Generated blog text:", blogText);
-
-
-    const title_prompt = `先ほど生成した台本をYoutube動画にする際の動画タイトルを、再生数が取れそうな引きのある文言で15文字程度で作成してください。先ほどの台本：${blogText}`;
-    const title_completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: title_prompt }],
-      temperature: 0.7,
-    });
-    const videoTitle = title_completion.choices[0].message.content;
 
 
     // タイトルとブログ結合
-    blogText = `${videoTitle}\n\n${blogText}\n\nこのチャンネルでは、このようなVtuber関連ニュースの解説を最速で投稿しています。よろしければ、チャンネル登録と高評価をお願いします。`;
+    blogText = `${videoTitle}\n${blogText}\n以上のニュース詳細は概要欄にて。このチャンネルでは、\nこのようなVtuber関連ニュースの\n解説を最速で投稿しています。\nよろしければ、\nチャンネル登録と高評価をお願いします。`;
+    console.log("Generated blog text+Title:", blogText);
 
-    const description_prompt = `先ほど生成した台本をYoutube動画にする際の動画のdescriptionを、200文字程度日本語で作成してください。先ほどの台本：${blogText}`;
+    const description_prompt = `以下の台本をyoutube動画にする際の動画のdescriptionを、300文字程度までで日本語で作成してください。先ほどの台本：${blogText}`;
     const description_completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [{ role: 'user', content: description_prompt }],
       temperature: 0.7,
     });
-    const videoDescription = description_completion.choices[0].message.content;
+    let videoDescription = description_completion.choices[0].message.content;
 
-    const furigana_prompt = `以下の台本をVOICEVOXに正しく読ませるために、「Vtuber」を「ブイチューバー」など、英単語やアルファベットで書かれている固有名詞をすべて日本語のカタカナに変換してください。\n台本：${blogText}`;
+    videoDescription = `${videoDescription}\n\nニュース詳細:${finalURL}\n`;
+    console.log("Generated blog videoDescription:", videoDescription);
+
+    const furigana_prompt = `以下の文章全てをVOICEVOXに正しく読ませるために、「Vtuber」を「ブイチューバー」など、英単語やアルファベットで書かれている名詞や英単語をすべて日本語の読み仮名（カタカナ）に変換してください。\n文章：${blogText}`;
     const furigana_completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [{ role: 'user', content: furigana_prompt }],
@@ -2145,71 +2198,57 @@ exports.generateBlogVideoFromLatestNews = async (req, res) => {
     console.log("Generated Furigana text:", furiganaText);
 
 
-    const tags_prompt = `先ほど生成した台本をYoutube動画にする際の動画のTagを、より検索にヒットしそうなもので、かつ絵文字を含まないで5つ程度リスト形式（['vtuber', 'ニュース']のような形）で作成してください。先ほどの台本：${blogText}`;
-    const tags_completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: tags_prompt }],
-      temperature: 0.7,
-    });
-    const videoTags = tags_completion.choices[0].message.content;
+    if (!Array.isArray(videoTags)) {
+      // Tag自動モード
+      const tags_prompt = `以下の台本をyouTube動画にする際の動画のTagを、検索にヒットしやすいものから20個、日本語で出力してください。
+        - 「vtuber」は必ず含めてください。
+        - 絵文字は含めないでください。
+        - 出力は JSON 配列形式のみ、余計な説明はしないでください。
+        - 例: ["vtuber", "ニュース", "コラボ", "配信", "ゲーム"]
+        台本：${blogText}`;
 
-    // 1. VOICEVOX: 音声合成
-    const speakerId = 1;
+      const tags_completion = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [{ role: 'user', content: tags_prompt }],
+        temperature: 0.7,
+      });
+      const rawText = tags_completion.choices[0].message.content.trim();
 
-    const queryRes = await axios.post(
-      `${VOICEVOX_ENGINE_URL}/audio_query?text=${encodeURIComponent(furiganaText)}&speaker=${speakerId}`,
-      null,
-      { headers: { 'Accept': 'application/json' } }
-    );
-    let audioQuery = queryRes.data;
-    audioQuery.speedScale = 1.2;
-    speedScale = audioQuery.speedScale;
-    audioQuery.postPhonemeLength = 0.1;
+      // 最初の JSON 配列っぽい部分を正規表現で抽出
+      const match = rawText.match(/\[[\s\S]*?\]/);
+      videoTags = ['vtuber','毎日投稿','ニュース']; // フォールバック
 
-    const synthRes = await axios.post(
-      `${VOICEVOX_ENGINE_URL}/synthesis?speaker=${speakerId}`,
-      audioQuery,
-      {
-        headers: { 'Content-Type': 'application/json' },
-        responseType: 'arraybuffer',
-        timeout: 600000,
+      if (match) {
+        try {
+          videoTags = JSON.parse(match[0]);
+        } catch (err) {
+          console.error('❌ タグのJSONパース失敗:', err.message);
+        }
+      } else {
+        console.warn('⚠️ タグの配列形式が見つかりませんでした');
       }
-    );
+      console.log("[手動モード]Generated Tag:", videoTags);
+    }else{
+      // Tag手動モード
+      console.log("[手動モード]Generated Tag:", videoTags);
 
-    // 🎙️ 1. 一度ローカルに保存（/tmp）
-    const audioFileName = `temp/audio-${uuid}.wav`;
-    const tempAudioPath = `/tmp/audio-${uuid}.wav`; 
-    await fs.promises.writeFile(tempAudioPath, synthRes.data);
+    }
 
-    // ☁️ 2. それを GCS にアップロード
-    await storage.bucket(bucketName).upload(tempAudioPath, {
-      destination: audioFileName,
-    });
-    console.log('✅ 音声アップロード完了', audioFileName);
 
-    // 3. 字幕生成
-    // const totalDuration = audioQuery.outputSamplingRate > 0 ? synthRes.data.length / (audioQuery.outputSamplingRate * 2) : 30;
-    const srtPathFileName = `temp/subtitle-${Date.now()}.srt`;
-    const tempSrtPath = `/tmp/subtitle-${Date.now()}.srt`;
-    await generateSRTFromVoicevoxTiming(blogText, tempSrtPath, 1);
-    console.log(`✅ 字幕生成完了: ${tempSrtPath}`);
-    await storage.bucket(bucketName).upload(tempSrtPath, {
-      destination: srtPathFileName,
-    });
-    console.log(`✅ 字幕アップロード完了: ${srtPathFileName}`);
-
-    // 🎯 字幕用の .srt を GCS に保存（UTF-8エンコードで書き出し）
-    const subtitleGcsUri = `gs://${bucketName}/${srtPathFileName}`;
+    // 1. VOICEVOX: 音声合成　2. 字幕生成
+     await generateVoiceAndSRT(furiganaText,blogText,uuid);
 
     // 🎞️ 動画合成リクエスト
     const videoMergerUrl = 'https://video-merger-23130474318.asia-northeast1.run.app/merge';
-    const videoGcsUri = 'gs://vtuber-335811.appspot.com/background.mp4';
+    const videoGcsUri = await getRandomBackgroundGcsUri(bucketName);//'gs://vtuber-335811.appspot.com/background.mp4';
     const outputFilePath = `merged-output/output-${uuid}.mp4`;
     const outputPath = `gs://${bucketName}/${outputFilePath}`;
+    const audioGcsUri = `gs://${bucketName}/output/output-${uuid}.wav`;
+    const subtitleGcsUri = `gs://${bucketName}/output/output-${uuid}.srt`;
 
     const mergeRes = await axios.post(videoMergerUrl, {
       videoUri: videoGcsUri,
-      audioUri: `gs://${bucketName}/${audioFileName}`,
+      audioUri: audioGcsUri,
       outputUri: outputPath,
       subtitleSrtUri: subtitleGcsUri,
     }, {
@@ -2221,59 +2260,102 @@ exports.generateBlogVideoFromLatestNews = async (req, res) => {
 
     console.log("Merge result:", mergeRes.data);
     // ✅ 後始末（音声・字幕ファイルを削除）
-    await deleteGcsFile(bucketName, audioFileName);
-    await deleteGcsFile(bucketName, srtPathFileName);
-
+    await deleteGcsFile(bucketName, `output/output-${uuid}.wav`);
+    await deleteGcsFile(bucketName, `output/output-${uuid}.srt`);
 
     // ~~~~~~~~~~~~~~~~~~~~
-    // ② アップロード実行（バケット名と動画ファイル名を指定）
+    // // ② アップロード実行（バケット名と動画ファイル名を指定）
     const videoId = await youtubeUpload(bucketName, outputFilePath,videoTitle,videoDescription,videoTags);
     await deleteGcsFile(bucketName, outputFilePath);
 
     res.status(200).send(`動画を生成してYouTubeにアップロードしました: https://youtu.be/${videoId}`);
-    // ~~~~~~~~~~~~~~~~~~~~
-
-    // // 完了メッセージを返す
-    // res.json({ message: '動画の生成が完了しました', videoUrl: mergeRes.data.url });
+    // // ~~~~~~~~~~~~~~~~~~~~
 
   } catch (error) {
     console.error('Error generating blog or merging video:', error?.response?.data || error);
     res.status(500).send('Error generating blog or merging video.');
   }
-};
+});
+const express = require('express');
+const app = express();
+app.use(express.json());
+// app.post('/', async (req, res) => {
+//   try {
+//     await generateBlogVideoFromLatestNews(req, res);
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).send('Internal Server Error');
+//   }
+// });
+// app.get('/', async (req, res) => {
+//   await generateBlogVideoFromLatestNews(req, res);
+// });
+// exports.generateBlogVideoFromLatestNews = app;
+
+
+// ランダム動画選択
+async function getRandomBackgroundGcsUri(bucketName) {
+  const prefix = 'background_';
+  const [files] = await storage.bucket(bucketName).getFiles({ prefix });
+
+  // background_0_ 〜 background_10_ に一致するファイルを抽出
+  const candidates = files.filter(file => /^background_\d+_.*\.mp4$/.test(file.name));
+  if (candidates.length === 0) throw new Error("背景動画が見つかりません");
+
+  const randomIndex = Math.floor(Math.random() * candidates.length);
+  return `gs://${bucketName}/${candidates[randomIndex].name}`;
+}
+// ===============================
+// 🎬 Util
+// ===============================
+
+const crypto = require('crypto');
+
+// ハッシュ + 短縮名で安全なファイル名を作成
+function getSafeFileNameFromUrl(url) {
+  const hash = crypto.createHash('sha256').update(url).digest('hex').slice(0, 16);
+  const shortId = url.split('/').pop()?.slice(0, 20).replace(/[^a-zA-Z0-9-_]/g, '') || 'article';
+  return `${shortId}_${hash}`;
+}
 
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
 // 記事内容を取得する関数
 async function getArticleContent(url) {
-   const browser = await puppeteer.launch({
+  const browser = await puppeteer.launch({
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
-  const page = await browser.newPage();                        // ← ここ！
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless,
+  });
+
+  const page = await browser.newPage();
+
   try {
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
     );
 
-    //await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 300000 });
+    // 文字化け対策として UTF-8 を優先
+    await page.setExtraHTTPHeaders({
+      'Accept-Charset': 'utf-8'
+    });
+
     await page.goto(url, {
       waitUntil: ['domcontentloaded', 'networkidle2'],
       timeout: 450_000,
     });
+
     try {
-      await page.waitForSelector('article, div.main-article, div.article-body, section', { timeout: 60000 }); // 60秒待機
+      await page.waitForSelector('article, div.main-article, div.article-body, section', { timeout: 60000 });
     } catch (e) {
       console.log("page.gotoでWarning: 指定されたセレクタが見つかりませんでした（通常のケースもあります）");
     }
 
-    const finalURL = page.url();
+    finalURL = page.url();
     console.log('最終URL:', finalURL);
-    
-    // セレクタリスト
+
     const paragraphSelectors = [
-      'div.entry-body p',   // ★まず一番優先
+      'div.entry-body p',
       'div.main-article p',
       'div.article-body p',
       'section p',
@@ -2281,7 +2363,6 @@ async function getArticleContent(url) {
       'body p',
     ];
 
-    // 本文を取得する関数
     async function extractParagraphs(context) {
       for (const selector of paragraphSelectors) {
         const paragraphs = await context.$$eval(selector, nodes =>
@@ -2293,10 +2374,9 @@ async function getArticleContent(url) {
       }
       return '';
     }
-    
+
     let articleText = await extractParagraphs(page);
-    
-    // もし取れなかったら iframeも見る
+
     if (!articleText) {
       const frames = page.frames();
       for (const frame of frames) {
@@ -2304,8 +2384,7 @@ async function getArticleContent(url) {
         if (articleText) break;
       }
     }
-    
-    // それでもダメならスクロールして再チャレンジ
+
     if (!articleText) {
       await page.evaluate(() => window.scrollBy(0, window.innerHeight));
       await page.waitForFunction(() => {
@@ -2317,18 +2396,21 @@ async function getArticleContent(url) {
           document.querySelectorAll('article p').length > 0
         );
       }, { timeout: 30000 });
-    
+
       articleText = await extractParagraphs(page);
     }
 
-  
     await browser.close();
-    return articleText;
+
+    // URL を先頭に追加
+    return `【出典】${finalURL}\n\n${articleText}`;
   } catch (error) {
     console.error('Error fetching article:', error);
+    await browser.close();
     return null;
   }
 }
+
 
 // 🔧 ファイル削除ユーティリティ
 async function deleteGcsFile(bucketName, filePath) {
@@ -2339,9 +2421,149 @@ async function deleteGcsFile(bucketName, filePath) {
     console.warn(`⚠️ Failed to delete: gs://${bucketName}/${filePath}`, err.message);
   }
 }
-// ===============================
-// 🎬 字幕生成本体
-// ===============================
+
+// ファイルアップロード共通
+async function uploadToGCS(localPath,remotePath) {
+  console.log(`☁️ Upload ${localPath} to gs://${bucketName}/${remotePath}`);
+  await storage.bucket(bucketName).upload(localPath, {
+    destination: remotePath,
+  });
+  console.log(`☁️ Uploaded ${localPath} to gs://${bucketName}/${remotePath}`);
+
+}
+
+// 音声生成
+async function synthesizeSentence(text, index,uuid) {
+  const queryResp = await axios.post(`${VOICEVOX_ENGINE_URL}/audio_query`, null, {
+    params: { text, speaker: SPEAKER_ID },
+  });
+  queryResp.data.speedScale = 1.4;
+  const synthesisResp = await axios.post(
+    `${VOICEVOX_ENGINE_URL}/synthesis?speaker=${SPEAKER_ID}`,
+    queryResp.data,
+    { responseType: 'arraybuffer' }
+  );
+
+  const filePath = `/tmp/sentence_-${uuid}${index}.wav`;
+  await fs.promises.writeFile(filePath, synthesisResp.data);
+  await uploadToGCS(filePath, `temp/sentence_-${uuid}${index}.wav`);
+  return filePath;
+}
+
+// 途中ファイル削除
+async function deleteTempFilesByUUID(uuid) {
+  const [files] = await storage.bucket(bucketName).getFiles({
+    prefix: `temp/sentence_-${uuid}`,
+  });
+
+  if (files.length === 0) {
+    console.log(`🧹 No files found with uuid: ${uuid}`);
+    return;
+  }
+
+  console.log(`🧹 Deleting ${files.length} files with uuid: ${uuid}`);
+  await Promise.all(
+    files.map(file => {
+      console.log(`🗑️ Deleting gs://${bucketName}/${file.name}`);
+      return file.delete().catch(err => {
+        console.warn(`⚠️ Failed to delete ${file.name}: ${err.message}`);
+      });
+    })
+  );
+  console.log('✅ All temp files deleted for uuid:', uuid);
+}
+
+async function generateVoiceAndSRT(text, srttext,uuid) {
+  const sentences = text
+    .split(/(?<=[。！？])/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const srtsentences = srttext
+    .split(/(?<=[。！？])/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const audioFiles = [];
+  const durations = [];
+  let srtContent = '';
+  let currentTime = 0;
+
+  const tokenizer = await new Promise((resolve, reject) => {
+    kuromoji.builder({ dicPath: 'node_modules/kuromoji/dict' }).build((err, tokenizer) => {
+      if (err) return reject(err);
+      resolve(tokenizer);
+    });
+  });
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i];
+    const srtsentence = srtsentences[i];
+
+    // kuromoji で長文センテンスを分割（音声と字幕タイミング）
+    const fragments = splitLongSentenceWithKuromoji(tokenizer, srtsentence, 32);
+
+    for (let frag of fragments) {
+      console.log(`🔊 音声生成中: ${frag}`);
+      const filePath = await synthesizeSentence(frag, audioFiles.length,uuid);
+      audioFiles.push(filePath);
+
+      let duration = await getAudioDuration(filePath);
+      if (isNaN(duration)) {
+        console.log(`❌ duration が NaN: filePath=${filePath}`);
+        duration = 0;
+      }
+      durations.push(duration);
+
+      const start = formatSrtTime(currentTime);
+      const end = formatSrtTime(currentTime + duration);
+
+      let wrapped = await wrapWithKuromoji(frag); // 字幕行の改行（16文字など）
+      wrapped = cleanUpWrappedText(wrapped);
+      console.log(`📝 字幕生成中: ${wrapped}`);
+      srtContent += `${audioFiles.length}\n${start} --> ${end}\n${wrapped}\n\n`;
+
+      currentTime += duration;
+    }
+  }
+
+  const srtPath = `/tmp/output-${uuid}.srt`;
+  await fs.promises.writeFile(srtPath, srtContent);
+  await uploadToGCS(srtPath, `output/output-${uuid}.srt`);
+
+  const listFile = `/tmp/-${uuid}concat_list.txt`;
+  const concatContent = audioFiles.map(f => `file '${f}'`).join('\n');
+  await fs.promises.writeFile(listFile, concatContent);
+
+  const outputWavPath = `/tmp/output-${uuid}.wav`;
+  await execAsync(`ffmpeg -f concat -safe 0 -i ${listFile} -c copy ${outputWavPath}`);
+  await uploadToGCS(outputWavPath, `output/output-${uuid}.wav`);
+
+  //ファイル削除
+  for (const file of audioFiles) {
+    try {
+      await fs.promises.unlink(file);
+      console.log(`🗑️ 削除完了: ${file}`);
+    } catch (err) {
+      console.error(`⚠️ 削除失敗: ${file}`, err);
+    }
+  }
+  deleteTempFilesByUUID(uuid).catch(err => {
+    console.warn(`⚠️ Failed to delete temp files for uuid ${uuid}: ${err.message}`);
+  });
+  console.log(`✅ 音声とSRT生成完了: ${outputWavPath}, ${srtPath}`);
+}
+
+
+function formatSrtTime(seconds) {
+  if (typeof seconds !== 'number' || isNaN(seconds) || seconds < 0) {
+    throw new Error(`Invalid time value passed to formatSrtTime: ${seconds}`);
+  }
+
+  const ms = Math.floor(seconds * 1000);
+  const date = new Date(ms);
+  const iso = date.toISOString(); // "1970-01-01T00:00:12.345Z"
+  return iso.substr(11, 12).replace('.', ',');
+}
 const ffmpeg = require("fluent-ffmpeg");
 
 // ffprobe で音声長取得
@@ -2354,228 +2576,158 @@ async function getAudioDuration(filePath) {
   });
 }
 
-
-/**
- * VOICEVOX のタイミング情報から .srt を生成　旧式
- */
-// async function generateSRTFromVoicevoxTiming(text, srtPath, speakerId = 1) {
-//   // 1. クエリ取得
-//   console.log('⏱️ クエリ取得:', "クエリ取得");
-//   const queryRes = await axios.post(`${VOICEVOX_ENGINE_URL}/audio_query`, null, {
-//     params: { text, speaker: speakerId },
-//   });
-//   const query = queryRes.data;
-//   // console.log('⏱️ query:', query);
-//   console.log('⏱️ query:', query);
-
-//   // 2. 音声生成 → duration 測定用
-//   const synthesisRes = await axios.post(`${VOICEVOX_ENGINE_URL}/synthesis`, query, {
-//     params: { speaker: speakerId },
-//     responseType: "arraybuffer",
-//   });
-//   console.log('⏱️ synthesisRes:', synthesisRes);
-
-//   const tmpAudioPath = "/tmp/voice.wav";
-//   await fs.promises.writeFile(tmpAudioPath, Buffer.from(synthesisRes.data));
-//   const realAudioDuration = await getAudioDuration(tmpAudioPath); // ffprobeで実測
-//   console.log('⏱️ realAudioDuration:', realAudioDuration);
-
-//   // 3. 各モーラのタイミングリスト作成
-//   const timingList = [];
-//   for (const phrase of query.accent_phrases) {
-//     for (const mora of phrase.moras) {
-//       const length = (mora.consonant_length || 0) + (mora.vowel_length || 0);
-//       timingList.push(length);
-//     }
-//     if (phrase.pause_mora) {
-//       timingList.push(phrase.pause_mora.vowel_length || 0.3);
-//     }
-//   }
-
-//   const estimatedDuration = timingList.reduce((a, b) => a + b, 0);
-//   console.log('⏱️ estimatedDuration:', estimatedDuration);
-//   const scale = realAudioDuration / estimatedDuration;
-//   console.log('⏱️ scale:', scale);
-
-//   // 4. 文単位に分割
-//   //const sentences = text.split(/(?<=[。！？])/).map((s) => s.trim()).filter(Boolean);
-//   const sentences = text.split(/(?<=[。！？])/).map((s) => s.trim()).filter(Boolean);
-//   const moraCountPerSentence = sentences.map(s => s.length); // モーラ数（文字数ベース）
-//   const adjustedScale = scale;
-
-//   // 5. SRT 書き出し
-//   const srtLines = [];
-//   let moraIndex = 0;
-//   let currentTime = 0;
-//   const OFFSET = -0.1; // 字幕表示の早出し
-
-//   for (let i = 0; i < sentences.length; i++) {
-//     const sentence = sentences[i];
-//     const moraCount = moraCountPerSentence[i];
-  
-//     const segmentTimings = timingList.slice(moraIndex, moraIndex + moraCount);
-//     const duration = segmentTimings.reduce((a, b) => a + b, 0) * adjustedScale;
-  
-//     const startTime = Math.max(currentTime + OFFSET, 0);
-//     const endTime = Math.max(currentTime + duration, 0);
-  
-//     const start = formatTime(startTime);
-//     const end = formatTime(endTime);
-  
-//     const wrapped = wrapSubtitleText(sentence);
-//     srtLines.push(`${i + 1}\n${start} --> ${end}\n${wrapped}\n`);
-  
-//     currentTime += duration;
-//     moraIndex += moraCount;
-//   }
-
-//   await fs.promises.writeFile(srtPath, srtLines.join("\n"), "utf-8");
-//   console.log('✅ 字幕切り分け完了:', srtLines);
-// }
-/**
- * VOICEVOX のタイミング情報から .srt を生成
- */
-async function generateSRTFromVoicevoxTiming(text, srtPath, speakerId = 1) {
-  // 1. クエリ取得
-  console.log('⏱️ クエリ取得:', text);
-  const queryRes = await axios.post(`${VOICEVOX_ENGINE_URL}/audio_query`, null, {
-    params: { text, speaker: speakerId },
-  });
-  const query = queryRes.data;
-
-  // 2. 音声生成
-  const synthesisRes = await axios.post(`${VOICEVOX_ENGINE_URL}/synthesis`, query, {
-    params: { speaker: speakerId },
-    responseType: "arraybuffer",
-  });
-
-  const tmpAudioPath = "/tmp/voice.wav";
-  await fs.promises.writeFile(tmpAudioPath, Buffer.from(synthesisRes.data));
-
-  // 3. 無音時間を検出
-  const silenceStart = await detectSilenceStart(tmpAudioPath);
-  console.log('⏱️ silenceStart:', silenceStart, '秒');
-
-  // 4. 実際の音声の長さを取得
-  const realAudioDuration = await getAudioDuration(tmpAudioPath);
-  console.log('⏱️ realAudioDuration:', realAudioDuration, '秒');
-
-  // 5. モーラ＋pause分長さを集計
-  const rawLengths = [];
-  for (const phrase of query.accent_phrases) {
-    for (const mora of phrase.moras) {
-      rawLengths.push((mora.consonant_length || 0) + (mora.vowel_length || 0));
-    }
-    if (phrase.pause_mora) {
-      rawLengths.push(phrase.pause_mora.vowel_length || 0.3);
-    }
-  }
-
-  const estimatedDuration = rawLengths.reduce((a, b) => a + b, 0);
-  const scale = realAudioDuration / estimatedDuration;
-  const adjustedScale = scale ;//* (query.speedScale || 1);
-
-  const scaledLengths = rawLengths.map(l => l * adjustedScale);
-  const cumTimes = [0];
-  for (let i = 0; i < scaledLengths.length; i++) {
-    cumTimes.push(cumTimes[i] + scaledLengths[i]);
-  }
-
-  // 6. 文単位に分ける
-  const sentences = text.split(/(?<=[。！？])/).map(s => s.trim()).filter(Boolean);
-  const moraCountPerSentence = [];
-  let moraIdx = 0;
-  for (const sentence of sentences) {
-    let count = 0;
-    while (count < sentence.length && moraIdx < rawLengths.length) {
-      count++;
-      moraIdx++;
-    }
-    moraCountPerSentence.push(count);
-  }
-
-  // 無音検出
-  const initialSilence = await detectInitialSilence(tmpAudioPath);
-
-  // 7. SRTファイル作成
-  const OFFSET = silenceStart > 0 ? -silenceStart-1.5 : -1.5;
-  let startMora = 0;
-  const srtLines = [];
-  const totalAudioDuration = realAudioDuration + silenceStart; // 音声と無音を合わせた合計時間
-  let adjustedTimeScale = realAudioDuration / totalAudioDuration; // 全体の時間スケール調整
-
-  for (let i = 0; i < sentences.length; i++) {
-    const count = moraCountPerSentence[i];
-    const endMora = startMora + count;
-
-    // 無音時間と全体スケールに基づいて時間を調整
-    const startTime = Math.max(cumTimes[startMora] - initialSilence + OFFSET, 0);
-    const endTime   = Math.max(cumTimes[endMora] - initialSilence - OFFSET, 0);
-
-    // ここで調整後のタイムスケールを適
-    const adjustedStart = startTime * adjustedTimeScale;
-    const adjustedEnd = endTime * adjustedTimeScale;
-
-    const start = formatTime(adjustedStart);
-    const end = formatTime(adjustedEnd);
-    const wrapped = wrapSubtitleText(sentences[i]);
-
-    srtLines.push(`${i+1}\n${start} --> ${end}\n${wrapped}\n`);
-    startMora = endMora;
-  }
-
-  await fs.promises.writeFile(srtPath, srtLines.join("\n"), "utf-8");
-  console.log('✅ 字幕書き出し完了:', srtPath);
+// 句読点の整理
+function cleanUpWrappedText(text) {
+  return text
+    .split('\n')
+    .map(line => line.replace(/^[、。]/, '').replace(/[、。]$/, '')) // 改行行の先頭・末尾の句読点を削除
+    .join('\n');
 }
 
-// 時間を "00:00:00,000" 形式にする
-function formatTime(seconds) {
-  const date = new Date(seconds * 1000);
-  const hh = String(date.getUTCHours()).padStart(2, '0');
-  const mm = String(date.getUTCMinutes()).padStart(2, '0');
-  const ss = String(date.getUTCSeconds()).padStart(2, '0');
-  const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
-  return `${hh}:${mm}:${ss},${ms}`;
-}
+const kuromoji = require('kuromoji'); 
+// 📌 インラインで定義：改行処理（形態素解析）
+function wrapWithKuromoji(text, maxLength = 16) {
+  return new Promise((resolve, reject) => {
+    kuromoji.builder({ dicPath: 'node_modules/kuromoji/dict' }).build((err, tokenizer) => {
+      if (err) return reject(err);
 
-function pad(n, z = 2) {
-  return n.toString().padStart(z, "0");
-}
+      const tokens = tokenizer.tokenize(text);
+      const lines = [];
+      let buffer = '';
 
-// 長文を最大3行・12文字ずつに改行（句読点優先）
-function wrapSubtitleText(text, maxLineLength = 13, maxLines = 12) {
-  const lines = [];
+      for (const token of tokens) {
+        const word = token.surface_form;
+        const next = buffer + word;
 
-  // 句読点や助詞、スペースなどで切れる位置を優先
-  //const breakChars = ['、', '。', '，', '．', ' ', '・', '？', '！'];
-  const breakChars = ['。', '，', '．','・'];
-
-  let remaining = text;
-
-  for (let i = 0; i < maxLines && remaining.length > 0; i++) {
-    // まず最大長の部分を取り出す
-    let sliceEnd = Math.min(maxLineLength, remaining.length);
-    let candidate = remaining.slice(0, sliceEnd);
-
-    // 最後の breakChar の位置で改行する
-    let bestBreak = -1;
-    for (let j = candidate.length - 1; j >= 0; j--) {
-      if (breakChars.includes(candidate[j])) {
-        bestBreak = j + 1;
-        break;
+        if (countVisibleCharacters(next) > maxLength) {
+          lines.push(buffer);
+          buffer = word;
+        } else {
+          buffer = next;
+        }
       }
+
+      if (buffer) lines.push(buffer);
+
+      resolve(lines.join('\\N'));
+    });
+  });
+}
+
+function splitLongSentenceWithKuromoji(tokenizer, sentence, maxLength = 32) {
+  const tokens = tokenizer.tokenize(sentence);
+  const result = [];
+  let buffer = '';
+
+  for (const token of tokens) {
+    const word = token.surface_form;
+    const next = buffer + word;
+
+    if (countVisibleCharacters(next) > maxLength) {
+      if (buffer) result.push(buffer);
+      buffer = word;
+    } else {
+      buffer = next;
     }
-
-    // breakCharが見つからない → 強制的に13文字
-    if (bestBreak === -1) bestBreak = sliceEnd;
-
-    const line = remaining.slice(0, bestBreak).trim();
-    lines.push(line);
-    remaining = remaining.slice(bestBreak).trim();
   }
 
-  return lines.join("\\N");
+  if (buffer) result.push(buffer);
+
+  return result;
 }
+
+
+function countVisibleCharacters(str) {
+  return [...str].length;
+}
+
+// async function wrapSubtitleText(text, maxLength = 16) {
+//   if (typeof text !== 'string' || !text.trim()) return '';
+
+//   const prompt =  `
+// 以下の文章を、字幕として読みやすいように、1行${maxLength}文字以内で改行してください。
+// 改行には必ず "\\N" を使ってください。
+// 可能な限り文章全体の意味が伝わるよう自然なところで改行してください。
+
+// ただし、「、」「。」などの句読点の直前や後であっても、1行の文字数制限(${maxLength}文字以内)を最優先してください。
+
+// 文章:
+// ${text}
+// `;
+
+//   try {
+//     const response = await openai.chat.completions.create({
+//       model: 'gpt-3.5-turbo',
+//       messages: [{ role: 'user', content: prompt }],
+//       temperature: 0.7,
+//     });
+
+//     let output = response.choices[0].message.content;
+//     output = output.replace(/\r?\n/g, ''); // 改行除去
+//     console.log('📤 ChatGPTからの生出力:', output);
+//     const lines = output.split('\\N');
+
+//     // ✅ 全角長チェックに修正
+//     const allLinesValid = lines.every(line => countVisibleCharacters(line.trim()) <= maxLength);
+
+//     if (!allLinesValid) {
+//       console.warn('⚠ ChatGPT output exceeded max full-width length. Falling back to JS logic.');
+//       return fallbackLineWrap(text, maxLength);
+//     }
+
+//     return lines.map(line => line.trim()).join('\\N');
+
+//   } catch (err) {
+//     console.error('❌ ChatGPT API エラー:', err.message);
+//     console.log(`エラーになったので、JSロジックにて改行処理を実施`);
+//     return fallbackLineWrap(text, maxLength);
+//   }
+// }
+
+// // ✅ JS側のフェイルセーフ改行処理
+// function fallbackLineWrap(text, maxLength) {
+//   if (typeof text !== 'string') return '';
+
+//   const avoidBreakingWords = ['EN', 'Official', 'Store', 'NIJISANJI'];
+//   const result = [];
+//   let buffer = '';
+
+//   // 一旦、「、」「。」の後で仮の分割を入れてから処理
+//   const preSplit = text
+//     .replace(/(、|。)/g, '$1|') // 「、」「。」の直後に仮の区切り記号（|）を挿入
+//     .split('|')                 // その記号で分割
+//     .map(s => s.trim())         // 前後の空白削除
+//     .filter(Boolean);           // 空文字除去
+
+//   for (let fragment of preSplit) {
+//     const newBuffer = (buffer + fragment).trim();
+
+//     if (
+//       avoidBreakingWords.some(w => fragment.includes(w)) ||
+//       countVisibleCharacters(newBuffer) > maxLength
+//     ) {
+//       if (buffer) result.push(buffer.trim());
+//       buffer = fragment;
+//     } else {
+//       buffer = newBuffer;
+//     }
+//   }
+
+//   if (buffer) result.push(buffer.trim());
+
+//   return result.join('\\N');
+// }
+
+// countVisibleCharacters は全角＝2, 半角＝1でカウント
+// function countVisibleCharacters(text) {
+//   let count = 0;
+//   for (const char of text) {
+//     count += /[ -~]/.test(char) ? 1 : 2; // 半角なら1, 全角なら2
+//   }
+//   return count;
+// }
+
+
 
 
 // SRT 時間形式に変換
@@ -2589,40 +2741,6 @@ function formatTime(seconds) {
 
 function pad(n, z = 2) {
   return n.toString().padStart(z, "0");
-}
-
-// 長文を最大3行・12文字ずつに改行（句読点優先）
-function wrapSubtitleText(text, maxLineLength = 13, maxLines = 12) {
-    const lines = [];
-
-    // 句読点や助詞、スペースなどで切れる位置を優先
-    const breakChars = ['、', '。', '，', '．', ' ', '・', '？', '！'];
-  
-    let remaining = text;
-  
-    for (let i = 0; i < maxLines && remaining.length > 0; i++) {
-      // まず最大長の部分を取り出す
-      let sliceEnd = Math.min(maxLineLength, remaining.length);
-      let candidate = remaining.slice(0, sliceEnd);
-  
-      // 最後の breakChar の位置で改行する
-      let bestBreak = -1;
-      for (let j = candidate.length - 1; j >= 0; j--) {
-        if (breakChars.includes(candidate[j])) {
-          bestBreak = j + 1;
-          break;
-        }
-      }
-  
-      // breakCharが見つからない → 強制的に13文字
-      if (bestBreak === -1) bestBreak = sliceEnd;
-  
-      const line = remaining.slice(0, bestBreak).trim();
-      lines.push(line);
-      remaining = remaining.slice(bestBreak).trim();
-    }
-  
-    return lines.join("\\N");
 }
 
 // ffmpegで無音開始時間を検出する関数
@@ -2655,9 +2773,6 @@ async function detectSilenceStart(audioPath) {
     ffmpeg.on('error', reject);
   });
 }
-
-// 無音検出関数
-const { exec } = require('child_process');
 
 async function detectInitialSilence(audioPath) {
   const cmd = `ffmpeg -i ${audioPath} -af silencedetect=noise=-40dB:d=0.1 -f null -`;
@@ -2719,3 +2834,352 @@ async function alreadyProcessed(articleLink) {
 
   return okExists || ngExists;
 }
+
+
+// // 長文を最大3行・12文字ずつに改行（句読点優先）
+// function wrapSubtitleText(text, maxLineLength = 20, maxLines = 15) {
+//   const lines = [];
+
+//   // 句読点や助詞、スペースなどで切れる位置を優先
+//   //const breakChars = ['。', '、', '！', '？', '・', ' ', '　'];
+//   const breakChars = ['。', '、', '！', '？', '・', '\N', '】', '」'];
+//   //const breakChars = ['。', '、', '！', '？', '・'];
+//   //const breakChars = ['。'];
+
+//   let remaining = text;
+
+//   for (let i = 0; i < maxLines && remaining.length > 0; i++) {
+//     // まず最大長の部分を取り出す
+//     let sliceEnd = Math.min(maxLineLength, remaining.length);
+//     let candidate = remaining.slice(0, sliceEnd);
+
+//     // 最後の breakChar の位置で改行する
+//     let bestBreak = -1;
+//     for (let j = candidate.length - 1; j >= 0; j--) {
+//       if (breakChars.includes(candidate[j])) {
+//         bestBreak = j + 1;
+//         break;
+//       }
+//     }
+
+//     // breakCharが見つからない → 強制的に13文字
+//     if (bestBreak === -1) bestBreak = sliceEnd;
+
+//     const line = remaining.slice(0, bestBreak).trim();
+//     lines.push(line);
+//     remaining = remaining.slice(bestBreak).trim();
+//   }
+
+//   return lines.join("\\N");
+// }
+
+
+// async function generateSRTFromVoicevoxTiming(text, srtPath, speakerId = 1,synthesisRes,query) {
+
+
+//   const tmpAudioPath = "/tmp/voice.wav";
+//   await fs.promises.writeFile(tmpAudioPath, Buffer.from(synthesisRes.data));
+
+//   // 3. 無音時間を検出
+//   const silenceStart = await detectSilenceStart(tmpAudioPath);
+//   console.log('⏱️ silenceStart:', silenceStart, '秒');
+
+//   // 4. 実際の音声の長さを取得
+//   const realAudioDuration = await getAudioDuration(tmpAudioPath);
+//   console.log('⏱️ realAudioDuration:', realAudioDuration, '秒');
+
+//   // 5. モーラ＋pause分長さを集計
+//   const rawLengths = [];
+//   for (const phrase of query.accent_phrases) {
+//     for (const mora of phrase.moras) {
+//       rawLengths.push((mora.consonant_length || 0) + (mora.vowel_length || 0));
+//     }
+//     if (phrase.pause_mora) {
+//       rawLengths.push(phrase.pause_mora.vowel_length || 0.3);
+//     }
+//   }
+
+//   const estimatedDuration = rawLengths.reduce((a, b) => a + b, 0);
+//   const scale = realAudioDuration / estimatedDuration;
+//   const adjustedScale = scale * (query.speedScale || 1);//scale ;//* (query.speedScale || 1);
+
+//   const scaledLengths = rawLengths.map(l => l * adjustedScale);
+//   const cumTimes = [0];
+//   for (let i = 0; i < scaledLengths.length; i++) {
+//     cumTimes.push(cumTimes[i] + scaledLengths[i]);
+//   }
+
+//   // 6. 文単位に分ける
+//   // const sentences = text.split(/(?<=[。！？])/).map(s => s.trim()).filter(Boolean);
+//   const sentences = text
+//   .split(/(?<=[。！？、・…‥\n])|(?=そして|しかし|つまり|そのため|なお|ただし)/)
+//   .map(s => s.trim())
+//   .filter(Boolean);
+//   const moraCountPerSentence = [];
+//   let moraIdx = 0;
+//   for (const sentence of sentences) {
+//     let count = 0;
+//     while (count < sentence.length && moraIdx < rawLengths.length) {
+//       count++;
+//       moraIdx++;
+//     }
+//     moraCountPerSentence.push(count);
+//   }
+
+//   // 無音検出
+//   const initialSilence = await detectInitialSilence(tmpAudioPath);
+
+//   // 7. SRTファイル作成
+//   const OFFSET = silenceStart > 0 ? -silenceStart-3 : -3;
+//   // const OFFSET = -silenceStart;
+//   let startMora = 0;
+//   const srtLines = [];
+//   srtLines.push(''); 
+//   const totalAudioDuration = realAudioDuration + silenceStart; // 音声と無音を合わせた合計時間
+//   let adjustedTimeScale = realAudioDuration / totalAudioDuration; // 全体の時間スケール調整
+
+//   for (let i = 0; i < sentences.length; i++) {
+//     const count = moraCountPerSentence[i];
+//     const endMora = startMora + count;
+
+//     // 無音時間と全体スケールに基づいて時間を調整
+//     const startTime = Math.max(cumTimes[startMora] - initialSilence + OFFSET, 0);
+//     const endTime   = Math.max(cumTimes[endMora] + initialSilence - OFFSET, 0);
+//     // const startTime = Math.max(cumTimes[startMora] + OFFSET, 0);
+//     // const endTime   = Math.max(cumTimes[endMora] + OFFSET, 0);
+
+//     // ここで調整後のタイムスケールを適
+//     const adjustedStart = startTime * adjustedTimeScale;
+//     const adjustedEnd = endTime * adjustedTimeScale;
+
+//     const start = formatTime(adjustedStart);
+//     const end = formatTime(adjustedEnd);
+//     const wrapped = wrapSubtitleText(sentences[i]);
+
+//     srtLines.push(`${i+1}\n${start} --> ${end}\n  ${wrapped}\n`);
+//     startMora = endMora;
+//   }
+
+//   await fs.promises.writeFile(srtPath, srtLines.join("\n\n"), "utf-8");
+//   console.log('✅ 字幕書き出し完了:', srtPath);
+// }
+
+// // 時間を "00:00:00,000" 形式にする
+// function formatTime(seconds) {
+//   const date = new Date(seconds * 1000);
+//   const hh = String(date.getUTCHours()).padStart(2, '0');
+//   const mm = String(date.getUTCMinutes()).padStart(2, '0');
+//   const ss = String(date.getUTCSeconds()).padStart(2, '0');
+//   const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
+//   return `${hh}:${mm}:${ss},${ms}`;
+// }
+
+// function pad(n, z = 2) {
+//   return n.toString().padStart(z, "0");
+// }
+
+// exports.generateBlogVideoFromLatestNews = async (req, res) => {
+//   // if (req.method !== 'POST') {
+//   //   res.status(405).send('Method Not Allowed');
+//   //   return;
+//   // }
+//   const uuid = uuidv4();
+//   try {
+//     const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber+OR+%E3%83%9B%E3%83%AD%E3%83%A9%E3%82%A4%E3%83%96+OR+%E3%81%AB%E3%81%98%E3%81%95%E3%82%93%E3%81%98&hl=ja&gl=JP&ceid=JP:ja');
+//     //const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber&hl=ja&gl=JP&ceid=JP:ja');
+
+//       // pubDateでソート
+//     const sortedItems = feed.items.sort((a, b) => {
+//       return new Date(b.pubDate) - new Date(a.pubDate); // 新しい順
+//     });
+  
+//     const latestItem = sortedItems[0];
+//     console.log(latestItem.title);
+//     console.log(latestItem.link);
+//     const title = latestItem.title;
+//     const articleLink = latestItem.link;
+
+//     const isAlreadyProcessed = await alreadyProcessed(articleLink);
+//     if (isAlreadyProcessed) {
+//       console.log(`スキップ：すでに生成済み - > ${articleLink}`);
+
+//       res.status(200).send(`スキップ：すでに生成済み - > ${articleLink}`);
+//       return; // 処理終了
+//     }else{
+//       console.log(`スタート：動画を生成します - > ${articleLink}`);
+//     }
+//     finalURL = articleLink;
+//     const articleText = await getArticleContent(articleLink);
+//     let prompt = "";
+//     console.log("記事:", articleText);
+    
+//     const status = articleText ? 'OK' : 'NG';
+//     const safeFileName = getSafeFileNameFromUrl(articleLink);
+    
+//     // 既存の文字列テンプレートの形を維持
+//     const filePath = `temp/${status}_${safeFileName}.txt`;
+//     const tempFilePath = `/tmp/${status}_${safeFileName}.txt`; 
+    
+//     // 一時ファイルとして保存
+//     await fs.promises.writeFile(tempFilePath, articleText || '', { encoding: 'utf8' });
+    
+//     // Cloud Storageにアップロード
+//     await storage.bucket(bucketName).upload(tempFilePath, {
+//       destination: filePath,
+//     });
+
+//     console.log(`記事を ${filePath} に保存しました`);
+//     if (articleText) {
+//       // スクレイピングした記事内容を元に台本を生成
+//       // await generateScript(articleText);
+//       prompt = `以下の記事に基づいて、youtubeにアップするニュース記事の台本を400文字程度で、Vtuberに関連するニュースのみを改行せず台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\n記事: ${articleText}`;
+//     } else {
+//       console.log('記事の取得に失敗しました。タイトルで生成します。');
+//       prompt = `以下の記事タイトルに基づいて、youtubeにアップするニュース記事の台本を400文字程度で、Vtuberに関連するニュースのみを改行せず台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\nタイトル: ${title}`;
+//     }
+
+//     const completion = await openai.chat.completions.create({
+//       model: 'gpt-3.5-turbo',
+//       messages: [{ role: 'user', content: prompt }],
+//       temperature: 0.7,
+//     });
+//     let blogText = completion.choices[0].message.content;
+//     console.log("Generated blog text:", blogText);
+
+
+//     const title_prompt = `先ほど生成した台本をYoutube動画にする際の動画タイトルを、再生数が取れそうな引きのある文言で15文字程度で作成してください。先ほどの台本：${blogText}`;
+//     const title_completion = await openai.chat.completions.create({
+//       model: 'gpt-3.5-turbo',
+//       messages: [{ role: 'user', content: title_prompt }],
+//       temperature: 0.7,
+//     });
+//     const videoTitle = title_completion.choices[0].message.content;
+
+
+//     // タイトルとブログ結合
+//     blogText = `${videoTitle}\n${blogText}\n以上のニュース詳細は概要欄にて。このチャンネルでは、このようなVtuber関連ニュースの解説を最速で投稿しています。よろしければ、チャンネル登録と高評価をお願いします。`;
+//     console.log("Generated blog text+Title:", blogText);
+
+//     const description_prompt = `先ほど生成した台本をYoutube動画にする際の動画のdescriptionを、200文字程度日本語で作成してください。先ほどの台本：${blogText}`;
+//     const description_completion = await openai.chat.completions.create({
+//       model: 'gpt-3.5-turbo',
+//       messages: [{ role: 'user', content: description_prompt }],
+//       temperature: 0.7,
+//     });
+//     let videoDescription = description_completion.choices[0].message.content;
+
+//     videoDescription = `${videoDescription}\n\nニュース詳細:${finalURL}\n`;
+//     console.log("Generated blog videoDescription:", videoDescription);
+
+//     const furigana_prompt = `以下の文章全てをVOICEVOXに正しく読ませるために、「Vtuber」を「ブイチューバー」など、英単語やアルファベットで書かれている名詞や英単語をすべて日本語の読み仮名（カタカナ）に変換してください。\n文章：${blogText}`;
+//     const furigana_completion = await openai.chat.completions.create({
+//       model: 'gpt-3.5-turbo',
+//       messages: [{ role: 'user', content: furigana_prompt }],
+//       temperature: 0.7,
+//     });
+//     const furiganaText = furigana_completion.choices[0].message.content;
+//     console.log("Generated Furigana text:", furiganaText);
+
+
+//     const tags_prompt = `先ほど生成した台本をYoutube動画にする際の動画のTagを、より検索にヒットしそうなもので、かつ絵文字を含まないで5つ程度リスト形式（['vtuber', 'ニュース']のような形）で作成してください。先ほどの台本：${blogText}`;
+//     const tags_completion = await openai.chat.completions.create({
+//       model: 'gpt-3.5-turbo',
+//       messages: [{ role: 'user', content: tags_prompt }],
+//       temperature: 0.7,
+//     });
+//     const videoTags = tags_completion.choices[0].message.content;
+
+//     // 1. VOICEVOX: 音声合成
+//     const speakerId = 1;
+
+//     const queryRes = await axios.post(
+//       `${VOICEVOX_ENGINE_URL}/audio_query?text=${encodeURIComponent(furiganaText)}&speaker=${speakerId}`,
+//       // `${VOICEVOX_ENGINE_URL}/audio_query?text=${encodeURIComponent("テスト文言")}&speaker=${speakerId}`,
+//       null,
+//       {
+//         headers: { 'Accept': 'application/json' },
+//         timeout: 600000 // 10秒など、妥当な値を設定
+//       }
+//     );
+//     let audioQuery = queryRes.data;
+//     audioQuery.speedScale = 1.2;
+//     audioQuery.volumeScale = 1.0; // ⭐️ 音量を固定
+//     // audioQuery.intonationScale = 0.9; // ⭐️ 抑揚を軽めに
+//     speedScale = audioQuery.speedScale;
+//     audioQuery.postPhonemeLength = 0.1;
+
+//     const synthRes = await axios.post(
+//       `${VOICEVOX_ENGINE_URL}/synthesis?speaker=${speakerId}`,
+//       audioQuery,
+//       {
+//         headers: { 'Content-Type': 'application/json' },
+//         responseType: 'arraybuffer',
+//         timeout: 600000,
+//       }
+//     );
+
+//     // 🎙️ 1. 一度ローカルに保存（/tmp）
+//     const audioFileName = `temp/audio-${uuid}.wav`;
+//     const tempAudioPath = `/tmp/audio-${uuid}.wav`; 
+//     await fs.promises.writeFile(tempAudioPath, synthRes.data);
+
+//     // ☁️ 2. それを GCS にアップロード
+//     await storage.bucket(bucketName).upload(tempAudioPath, {
+//       destination: audioFileName,
+//     });
+//     console.log('✅ 音声アップロード完了', audioFileName);
+
+//     // 3. 字幕生成
+//     // const totalDuration = audioQuery.outputSamplingRate > 0 ? synthRes.data.length / (audioQuery.outputSamplingRate * 2) : 30;
+//     const srtPathFileName = `temp/subtitle-${Date.now()}.srt`;
+//     const tempSrtPath = `/tmp/subtitle-${Date.now()}.srt`;
+//     await generateSRTFromVoicevoxTiming(blogText, tempSrtPath, 1,synthRes,audioQuery);
+//     console.log(`✅ 字幕生成完了: ${tempSrtPath}`);
+//     await storage.bucket(bucketName).upload(tempSrtPath, {
+//       destination: srtPathFileName,
+//     });
+//     console.log(`✅ 字幕アップロード完了: ${srtPathFileName}`);
+
+//     // 🎯 字幕用の .srt を GCS に保存（UTF-8エンコードで書き出し）
+//     const subtitleGcsUri = `gs://${bucketName}/${srtPathFileName}`;
+
+//     // 🎞️ 動画合成リクエスト
+//     const videoMergerUrl = 'https://video-merger-23130474318.asia-northeast1.run.app/merge';
+//     const videoGcsUri = 'gs://vtuber-335811.appspot.com/background.mp4';
+//     const outputFilePath = `merged-output/output-${uuid}.mp4`;
+//     const outputPath = `gs://${bucketName}/${outputFilePath}`;
+
+//     const mergeRes = await axios.post(videoMergerUrl, {
+//       videoUri: videoGcsUri,
+//       audioUri: `gs://${bucketName}/${audioFileName}`,
+//       outputUri: outputPath,
+//       subtitleSrtUri: subtitleGcsUri,
+//     }, {
+//       headers: { 'Content-Type': 'application/json' },
+//       timeout: 540000,
+//       maxContentLength: Infinity,
+//       maxBodyLength: Infinity,
+//     });
+
+//     console.log("Merge result:", mergeRes.data);
+//     // ✅ 後始末（音声・字幕ファイルを削除）
+//     await deleteGcsFile(bucketName, audioFileName);
+//     await deleteGcsFile(bucketName, srtPathFileName);
+
+
+//     // ~~~~~~~~~~~~~~~~~~~~
+//     // // ② アップロード実行（バケット名と動画ファイル名を指定）
+//     const videoId = await youtubeUpload(bucketName, outputFilePath,videoTitle,videoDescription,videoTags);
+//     await deleteGcsFile(bucketName, outputFilePath);
+
+//     res.status(200).send(`動画を生成してYouTubeにアップロードしました: https://youtu.be/${videoId}`);
+//     // // ~~~~~~~~~~~~~~~~~~~~
+
+//     // // 完了メッセージを返す
+//     // res.json({ message: '動画の生成が完了しました', videoUrl: mergeRes.data.url });
+
+//   } catch (error) {
+//     console.error('Error generating blog or merging video:', error?.response?.data || error);
+//     res.status(500).send('Error generating blog or merging video.');
+//   }
+// };

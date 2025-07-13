@@ -1,29 +1,47 @@
-const fs = require('fs');
-const readline = require('readline');
-const { google } = require('googleapis');
+// get_youtube_token.mjs
+import fs from 'fs';
+import http from 'http';
+import open from 'open';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { google } from 'googleapis';
 
-const SCOPES = ['https://www.googleapis.com/auth/youtube.upload'];
-const TOKEN_PATH = 'youtube_token.json';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-fs.readFile('client_secret.json', (err, content) => {
-  if (err) return console.error('Error loading client secret file:', err);
-  authorize(JSON.parse(content));
+const CREDENTIALS_PATH = path.join(__dirname, 'client_secret.json');
+const TOKEN_PATH = path.join(__dirname, 'youtube_token.json');
+
+const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH));
+const { client_secret, client_id, redirect_uris } = credentials.installed;
+
+const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, 'http://localhost:3000/oauth2callback');
+
+const authUrl = oAuth2Client.generateAuthUrl({
+  access_type: 'offline',
+  scope: ['https://www.googleapis.com/auth/youtube.upload'],
 });
 
-function authorize(credentials) {
-  const { client_secret, client_id, redirect_uris } = credentials.installed;
-  const oAuth2Client = new google.auth.OAuth2(
-    client_id, client_secret, redirect_uris[0]);
+const server = http.createServer(async (req, res) => {
+  if (req.url.startsWith('/oauth2callback')) {
+    const url = new URL(req.url, 'http://localhost:3000');
+    const code = url.searchParams.get('code');
 
-  // ↓ ここにあなたの code をコピペ！
-  const code = '4/0Ab_5qlml2bLxOrTTg6YRY1ZWHfVd6Dnf_yCZDIr4wjCgIZHHRG0BW7tVySRsoJ0Jsnny8Q';
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('✅ 認証成功！ターミナルに戻ってください。');
+    server.close();
 
-  oAuth2Client.getToken(code, (err, token) => {
-    if (err) return console.error('Error retrieving access token', err);
-    oAuth2Client.setCredentials(token);
-    fs.writeFile(TOKEN_PATH, JSON.stringify(token), (err) => {
-      if (err) return console.error(err);
-      console.log('Token stored to', TOKEN_PATH);
-    });
-  });
-}
+    try {
+      const { tokens } = await oAuth2Client.getToken(code);
+      fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
+      console.log('✅ トークンを youtube_token.json に保存しました');
+    } catch (err) {
+      console.error('❌ トークンの取得に失敗:', err);
+    }
+  }
+});
+
+server.listen(3000, () => {
+  console.log('🌐 ブラウザで認証ページを開きます...');
+  open(authUrl);
+});

@@ -55,12 +55,12 @@ export async function mergeVideoAndAudio({
       videoWidth: 720,
       videoHeight: 1280,
       subtitleBox: {
-        x: 100,          // 左余白（中央寄り）
-        y: 900,         // 字幕の上辺（下から300pxぐらい）
-        width: 520,     // 幅を赤枠に収める（全体から余白差し引いた）
-        height: 200     // 高さはそのままOK
+        x: 80,          // 左余白（中央寄り）
+        y: 500,         // 字幕の上辺（下から300pxぐらい）
+        width: 560,     // 幅を赤枠に収める（全体から余白差し引いた）
+        height: 300     // 高さはそのままOK
       },
-      fontSize: 60,
+      fontSize: 52,
       fontName: 'Noto Sans CJK JP', // 'sans-serif' だと環境によって再現されない可能性あり
       audioPath:'/tmp/mixed-audio.aac', // 音声ファイルのパス
     });
@@ -72,19 +72,22 @@ export async function mergeVideoAndAudio({
 
   // FFmpegコマンド構築（空白・パス対策）
   const ffmpegArgs = [
-    '-y',
-    '-i', videoPath,
-    '-i', '/tmp/mixed-audio.aac',//audioPath,
-    '-map', '0:v:0',
-    '-map', '1:a:0',
-    '-c:v', 'libx264',
-    '-c:a', 'aac',
-    '-ar', '44100',
-    '-ac', '2',
-    '-af', 'volume=10dB', // 20dBだとクリップすることがあるので注意
-    ...(hasSubtitle ? ['-vf', `subtitles=${assPath}:fontsdir=/usr/share/fonts`] : []),
-    '-shortest',
-    outputPath,
+  '-y',
+  '-i', videoPath,
+  '-i', '/tmp/mixed-audio.aac',
+  '-map', '0:v:0',
+  '-map', '1:a:0',
+  '-c:v', 'libx264',
+  '-preset', 'slow',
+  '-crf', '18',
+  '-c:a', 'aac',
+  '-b:a', '192k',
+  '-ar', '44100',
+  '-ac', '2',
+  '-af', 'volume=10dB',
+  ...(hasSubtitle ? ['-vf', `subtitles=${assPath}:fontsdir=/usr/share/fonts`] : []),
+  '-shortest',
+  outputPath,
   ];
 
   const cmd = ['ffmpeg', ...ffmpegArgs.map(arg => `"${arg}"`)].join(' ');
