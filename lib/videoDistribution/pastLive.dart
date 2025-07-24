@@ -48,7 +48,7 @@ class _PastLive extends State<PastLive>
     if (kIsWeb) {
     } else {
       // Admob
-      adHelper.loadNativeAds();
+      adHelper.buildNextNativeAdWidget();
     }
     _videoList = _loadData();
   }
@@ -58,6 +58,8 @@ class _PastLive extends State<PastLive>
     _isMounted = false;
     myState.removeListener(_onDataUpdated); // リスナーを解除
     myFavorteState.removeListener(_onDataUpdated); // リスナーを解除
+    // Admob
+    adHelper.disposeNativeAds();
     super.dispose();
   }
 
@@ -185,7 +187,7 @@ class _PastLive extends State<PastLive>
                                   width: screenWidth,
                                   height: height,
                                   child: adHelper
-                                      .buildNativeAdWidgetNextAd(), //AdHelper().buildNativeAdWidget(),
+                                      .buildNextNativeAdWidget(), //AdHelper().buildNativeAdWidget(),
                                 ),
                               ),
                         ]);

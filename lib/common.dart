@@ -708,6 +708,10 @@ class AdHelper {
     }
   }
 
+
+  DateTime lastInterstitialShown = DateTime.now().subtract(const Duration(minutes: 2));
+  final Duration _interstitialInterval = Duration(minutes: 2);
+
   static String get interstitialAdUnitId {
     if (Platform.isAndroid) {
       return kDebugMode
@@ -774,73 +778,115 @@ class AdHelper {
           size: 16.0));
 
   // Native Ads
-  List<NativeAd?> nativeAds = [];
-  void loadNativeAds() {
-    for (int i = 0; i < 1; i++) {
-      if (Platform.isIOS) {
-        NativeAd(
-          adUnitId: AdHelper.nativeAdUnitId,
+    final int maxNativeAds;
+    final List<NativeAd?> _nativeAds = [];
+    int _currentNativeAdIndex = 0;
+
+    AdHelper({this.maxNativeAds = 3});
+
+    void loadNativeAds() {
+      if (_nativeAds.length >= maxNativeAds) return;
+      for (int i = _nativeAds.length; i < maxNativeAds; i++) {
+        final ad = NativeAd(
+          adUnitId: nativeAdUnitId,
           request: const AdRequest(),
           factoryId: 'listTile',
-          //nativeTemplateStyle: AdHelper.nativeTemplateStyle,
           listener: NativeAdListener(
-            onAdLoaded: (ad) {
-              nativeAds.add(ad as NativeAd); // リストに広告を追加
-            },
+            onAdLoaded: (ad) => _nativeAds.add(ad as NativeAd),
             onAdFailedToLoad: (ad, err) {
-              nativeAds.add(null);
+              ad.dispose();
+              _nativeAds.add(null);
             },
           ),
-        ).load();
-      } else {
-        NativeAd(
-          adUnitId: AdHelper.nativeAdUnitId,
-          request: const AdRequest(),
-          // factoryId: 'googleNativeAdsCard',
-          //factoryId: 'listTile',
-          nativeTemplateStyle: AdHelper.nativeTemplateStyle,
-          listener: NativeAdListener(
-            onAdLoaded: (ad) {
-              nativeAds.add(ad as NativeAd); // リストに広告を追加
-            },
-            onAdFailedToLoad: (ad, err) {
-              nativeAds.add(null);
-            },
-            // Called when a click is recorded for a NativeAd.
-            onAdClicked: (ad) {},
-            // Called when an impression occurs on the ad.
-            onAdImpression: (ad) {},
-            // Called when an ad removes an overlay that covers the screen.
-            onAdClosed: (ad) {},
-            // Called when an ad opens an overlay that covers the screen.
-            onAdOpened: (ad) {},
-            // For iOS only. Called before dismissing a full screen view
-            onAdWillDismissScreen: (ad) {},
-            // Called when an ad receives revenue value.
-            onPaidEvent: (ad, valueMicros, precision, currencyCode) {},
-          ),
-        ).load();
+        );
+        ad.load();
       }
     }
-  }
 
-  int _currentNativeAdIndex = 0;
-  Widget buildNativeAdWidgetNextAd() {
-    if (nativeAds.isEmpty || nativeAds.length < _currentNativeAdIndex) {
-      return const SizedBox();
+    Widget buildNextNativeAdWidget() {
+      if (_nativeAds.isEmpty || _currentNativeAdIndex >= _nativeAds.length) {
+        loadNativeAds();
+        return const SizedBox();
+      }
+      final ad = _nativeAds[_currentNativeAdIndex];
+      _currentNativeAdIndex = (_currentNativeAdIndex + 1) % _nativeAds.length;
+      return ad != null ? AdWidget(ad: ad) : const SizedBox();
     }
-    if (bannerAds.length - 1 == _currentNativeAdIndex) {
-      loadNativeAds();
+
+    void disposeNativeAds() {
+      for (final ad in _nativeAds) {
+        ad?.dispose();
+      }
+      _nativeAds.clear();
+      _currentNativeAdIndex = 0;
     }
-    final ad = nativeAds[_currentNativeAdIndex];
-    _currentNativeAdIndex =
-        (_currentNativeAdIndex + 1) % nativeAds.length; // 次の広告のインデックスを更新
-    if (ad != null) {
-      return AdWidget(ad: ad);
-    } else {
-      return const SizedBox();
-    }
-  }
+  // List<NativeAd?> nativeAds = [];
+  // void loadNativeAds() {
+  //   for (int i = 0; i < 1; i++) {
+  //     if (Platform.isIOS) {
+  //       NativeAd(
+  //         adUnitId: AdHelper.nativeAdUnitId,
+  //         request: const AdRequest(),
+  //         factoryId: 'listTile',
+  //         //nativeTemplateStyle: AdHelper.nativeTemplateStyle,
+  //         listener: NativeAdListener(
+  //           onAdLoaded: (ad) {
+  //             nativeAds.add(ad as NativeAd); // リストに広告を追加
+  //           },
+  //           onAdFailedToLoad: (ad, err) {
+  //             nativeAds.add(null);
+  //           },
+  //         ),
+  //       ).load();
+  //     } else {
+  //       NativeAd(
+  //         adUnitId: AdHelper.nativeAdUnitId,
+  //         request: const AdRequest(),
+  //         // factoryId: 'googleNativeAdsCard',
+  //         //factoryId: 'listTile',
+  //         nativeTemplateStyle: AdHelper.nativeTemplateStyle,
+  //         listener: NativeAdListener(
+  //           onAdLoaded: (ad) {
+  //             nativeAds.add(ad as NativeAd); // リストに広告を追加
+  //           },
+  //           onAdFailedToLoad: (ad, err) {
+  //             nativeAds.add(null);
+  //           },
+  //           // Called when a click is recorded for a NativeAd.
+  //           onAdClicked: (ad) {},
+  //           // Called when an impression occurs on the ad.
+  //           onAdImpression: (ad) {},
+  //           // Called when an ad removes an overlay that covers the screen.
+  //           onAdClosed: (ad) {},
+  //           // Called when an ad opens an overlay that covers the screen.
+  //           onAdOpened: (ad) {},
+  //           // For iOS only. Called before dismissing a full screen view
+  //           onAdWillDismissScreen: (ad) {},
+  //           // Called when an ad receives revenue value.
+  //           onPaidEvent: (ad, valueMicros, precision, currencyCode) {},
+  //         ),
+  //       ).load();
+  //     }
+  //   }
+  // }
+
+  // int _currentNativeAdIndex = 0;
+  // Widget buildNativeAdWidgetNextAd() {
+  //   if (nativeAds.isEmpty || nativeAds.length < _currentNativeAdIndex) {
+  //     return const SizedBox();
+  //   }
+  //   if (bannerAds.length - 1 == _currentNativeAdIndex) {
+  //     loadNativeAds();
+  //   }
+  //   final ad = nativeAds[_currentNativeAdIndex];
+  //   _currentNativeAdIndex =
+  //       (_currentNativeAdIndex + 1) % nativeAds.length; // 次の広告のインデックスを更新
+  //   if (ad != null) {
+  //     return AdWidget(ad: ad);
+  //   } else {
+  //     return const SizedBox();
+  //   }
+  // }
 
   // Banner Ads
   List<BannerAd?> bannerAds = [];
@@ -917,26 +963,30 @@ class AdHelper {
 
   int _currentInterstitialAdAdIndex = 0;
   Future<void> interstitialAdShow() async {
-    int count = await _loadInterAdCount();
-    count++;
-    // カウントが5の倍数になったらInterstitialAdを表示
-    if (count % InterstitialADInterval == 0) {
-      if (interstitialAds.isEmpty ||
-          interstitialAds.length < _currentInterstitialAdAdIndex) {
-        return;
+    if (DateTime.now().difference(lastInterstitialShown) > _interstitialInterval) {
+      adHelper.interstitialAdShow();
+      lastInterstitialShown = DateTime.now();
+      int count = await _loadInterAdCount();
+      count++;
+      // カウントが5の倍数になったらInterstitialAdを表示
+      if (count % InterstitialADInterval == 0) {
+        if (interstitialAds.isEmpty ||
+            interstitialAds.length < _currentInterstitialAdAdIndex) {
+          return;
+        }
+        if (interstitialAds.length - 1 == _currentInterstitialAdAdIndex) {
+          loadInterstitialAds();
+        }
+        final ad = interstitialAds[_currentBannerAdIndex];
+        _currentInterstitialAdAdIndex = (_currentInterstitialAdAdIndex + 1) %
+            interstitialAds.length; // 次の広告のインデックスを更新
+        if (ad != null) {
+          ad.show();
+        }
       }
-      if (interstitialAds.length - 1 == _currentInterstitialAdAdIndex) {
-        loadInterstitialAds();
-      }
-      final ad = interstitialAds[_currentBannerAdIndex];
-      _currentInterstitialAdAdIndex = (_currentInterstitialAdAdIndex + 1) %
-          interstitialAds.length; // 次の広告のインデックスを更新
-      if (ad != null) {
-        ad.show();
-      }
+      // カウントを保存
+      _saveTnterCount(count);
     }
-    // カウントを保存
-    _saveTnterCount(count);
   }
 
   Future<int> _loadInterAdCount() async {

@@ -47,7 +47,7 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
     if (kIsWeb) {
     } else {
       // Admob
-      adHelper.loadNativeAds();
+      adHelper.buildNextNativeAdWidget();
     }
     _videoList = _loadData();
   }
@@ -58,6 +58,7 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
     myState.removeListener(_onDataUpdated); // リスナーを解除
     myFavorteState.removeListener(_onDataUpdated); // リスナーを解除
     myPushState.removeListener(_onDataUpdated); // リスナーを解除
+    adHelper.disposeNativeAds();
     super.dispose();
   }
 
@@ -163,7 +164,7 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
                                   width: screenWidth,
                                   height: height,
                                   child: adHelper
-                                      .buildNativeAdWidgetNextAd(), //AdHelper().buildNativeAdWidget(),
+                                      .buildNextNativeAdWidget(), //AdHelper().buildNativeAdWidget(),
                                 ),
                               ),
                         ]);

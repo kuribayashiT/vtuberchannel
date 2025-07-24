@@ -33,11 +33,12 @@ import 'sideMenu.dart';
 // import 'dart:html' as html;
 import 'package:url_launcher/url_launcher.dart';
 
+
 Widget topTitle = const SizedBox();
 double CupertinoTabBarHight = 0.0;
 int YoutubeNativeADInterval = 7;
 int InterstitialADInterval = 50;
-final AdHelper adHelper = AdHelper();
+final AdHelper adHelper =AdHelper(maxNativeAds: 3);
 // ignore: prefer_typing_uninitialized_variables
 var openContext;
 bool appLaunchByPushTapFlg = false;
@@ -290,6 +291,7 @@ class MyHomePageState extends State<MyHomePage>
     } else {
       // iOSやAndroid向けの処理をここに書く
       adHelper.interstitialAdShow();
+        
     }
     if (_tabController.index != 2) {
       Provider.of<ChangeTopTitle>(context, listen: false)

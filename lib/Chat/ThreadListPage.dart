@@ -204,8 +204,8 @@ class _ThreadListPageState extends State<ThreadListPage>
 
     if (filteredOfficeList.isEmpty) {
       return const Scaffold(
-        body:
-            CircularProgressIndicator(), //Center(child: Text('選択中のオフィスがありません。')),
+        body: Center(child: CircularProgressIndicator()),
+         //Center(child: Text('選択中のオフィスがありません。')),
       );
     }
 

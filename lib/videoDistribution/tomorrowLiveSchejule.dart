@@ -53,7 +53,7 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
     if (kIsWeb) {
     } else {
       // Admob
-      adHelper.loadNativeAds();
+      adHelper.buildNextNativeAdWidget();
       adHelper.loadBannerAds();
     }
   }
@@ -231,7 +231,7 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
                                   width: screenWidth,
                                   height: height,
                                   child: adHelper
-                                      .buildNativeAdWidgetNextAd(), //AdHelper().buildNativeAdWidget(),
+                                      .buildNextNativeAdWidget(), //AdHelper().buildNativeAdWidget(),
                                 ),
                               ),
                         ]);
@@ -271,13 +271,13 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
                             const Center(child: Text("この時間の配信予定はまだありません。")),
-                            if (adHelper.nativeAds.isNotEmpty)
+                            // if (adHelper.nativeAds.isNotEmpty)
                               Align(
                                 alignment: Alignment.topCenter,
                                 child: SizedBox(
                                   width: screenWidth,
                                   height: height,
-                                  child: adHelper.buildNativeAdWidgetNextAd(),
+                                  child: adHelper.buildNextNativeAdWidget(),
                                 ),
                               ),
                           ]);
@@ -316,7 +316,7 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
                                     width: screenWidth,
                                     height: height,
                                     child: adHelper
-                                        .buildNativeAdWidgetNextAd(), //AdHelper().buildNativeAdWidget(),
+                                        .buildNextNativeAdWidget(), //AdHelper().buildNativeAdWidget(),
                                   ),
                                 ),
                               if (index == dataForHour.length - 1)

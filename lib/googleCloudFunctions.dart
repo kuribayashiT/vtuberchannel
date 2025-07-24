@@ -61,6 +61,7 @@ class GoogleCloudFunctions {
       //   }
       // } else {
       // iOSやAndroid向けの処理をここに書く
+      
       adHelper.interstitialAdShow();
       Response response = await Dio().get(
         'https://storage.googleapis.com/vtuber-335811.appspot.com/officedataList.json',

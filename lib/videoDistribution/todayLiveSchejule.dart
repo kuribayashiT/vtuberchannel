@@ -56,7 +56,7 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
     if (kIsWeb) {
     } else {
       // Admob
-      adHelper.loadNativeAds();
+      adHelper.buildNextNativeAdWidget();
       adHelper.loadBannerAds();
     }
   }
@@ -67,6 +67,7 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
     myState.removeListener(_onDataUpdated); // リスナーを解除
     myFavorteState.removeListener(_onDataUpdated); // リスナーを解除
     myPushState.removeListener(_onDataUpdated); // リスナーを解除
+    adHelper.disposeNativeAds();
     super.dispose();
   }
 
@@ -240,7 +241,7 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
                                   width: screenWidth,
                                   height: height,
                                   child: adHelper
-                                      .buildNativeAdWidgetNextAd(), //AdHelper().buildNativeAdWidget(),
+                                      .buildNextNativeAdWidget(), //AdHelper().buildNativeAdWidget(),
                                 ),
                               ),
                         ]);
@@ -279,13 +280,13 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
                             const Center(child: Text("この時間の配信予定はまだありません。")),
-                            if (adHelper.nativeAds.isNotEmpty)
+                            // if (adHelper.nativeAds.isNotEmpty)
                               Align(
                                 alignment: Alignment.topCenter,
                                 child: SizedBox(
                                   width: screenWidth,
                                   height: height,
-                                  child: adHelper.buildNativeAdWidgetNextAd(),
+                                  child: adHelper.buildNextNativeAdWidget(),
                                 ),
                               ),
                           ]);
@@ -324,7 +325,7 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
                                     width: 320,
                                     height: 320,
                                     child: adHelper
-                                        .buildNativeAdWidgetNextAd(), //AdHelper().buildNativeAdWidget(),
+                                        .buildNextNativeAdWidget(), //AdHelper().buildNativeAdWidget(),
                                   ),
                                 ),
                               if (!kIsWeb)
