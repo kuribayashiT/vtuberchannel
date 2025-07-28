@@ -58,6 +58,7 @@ const BASE_URL = 'https://us-central1-vtuber-335811.cloudfunctions.net';
 // ステータス表示
 function showStatus(message, type = 'info') {
     const statusDiv = document.getElementById('status');
+    if (!statusDiv) return; // statusDivがなければ何もしない
     statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
     // 3秒後に自動削除（エラーの場合は残す）
     if (type !== 'error') {
@@ -81,13 +82,33 @@ async function loadOfficeOptions() {
         if (Array.isArray(officeRaw)) {
             officeList = officeRaw;
         } else if (typeof officeRaw === 'object') {
-            officeList = Object.values(officeRaw).filter(v => typeof v === 'string' && v !== '' && v !== 'updateTime');
+            // 数値キーやupdateTime、日付・数値データを除外し、事務所名だけ抽出
+            officeList = Object.values(officeRaw).filter(v => {
+                if (typeof v !== 'string') return false;
+                if (!v || v.trim() === '') return false;
+                // updateTimeや日付形式（YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD）を除外
+                if (v.match(/updateTime/i)) return false;
+                if (v.match(/\d{4}[-\/.]\d{2}[-\/.]\d{2}/)) return false;
+                if (v.match(/\d{8}/)) return false;
+                // 数値のみ（例: 20250728）も除外
+                if (/^\d+$/.test(v)) return false;
+                // 事務所名らしいものだけ残す
+                return true;
+            });
         } else {
             throw new Error('事務所データが不正です');
         }
-        window.officeList = officeList;
+        // デバッグ用ログ
+        console.log('[DEBUG][office] officeRaw:', officeRaw);
+        console.log('[DEBUG][office] officeList:', officeList);
         const officeMapping = await mappingRes.json();
         window.officeMapping = officeMapping;
+        console.log('[DEBUG][office] officeMapping:', officeMapping);
+        // ループ内の値も出力
+        officeList.forEach((v, i) => {
+            console.log(`[DEBUG][office] officeList[${i}]:`, v, '| mapping:', officeMapping[v.trim()]);
+        });
+        window.officeList = officeList;
         if (!officeMapping || typeof officeMapping !== 'object') {
             throw new Error('事務所マッピングデータが不正です');
         }
@@ -316,23 +337,26 @@ function generateOfficeRadioButtons(officeList, officeMapping) {
         const key = office.trim();
         const displayName = officeMapping[key] || office;
         const label = document.createElement('label');
-        label.className = 'office-radio-cute';
-        label.innerHTML = `
-            <input type="radio" name="office" value="${office}" onclick="selectOffice('${office}')">
+        const panel = document.createElement('div');
+        panel.className = 'office-panel-cute';
+        panel.setAttribute('data-office', office);
+        panel.onclick = function() { selectOffice(office); };
+        panel.innerHTML = `
             <span class="office-icon">🏢</span>
-            <span>${displayName}</span>
+            <span class="office-name">${displayName}</span>
         `;
-        container.appendChild(label);
+        container.appendChild(panel);
     });
-    // "その他"オプションを最後に追加
-    const otherLabel = document.createElement('label');
-    otherLabel.className = 'office-radio-cute';
-    otherLabel.innerHTML = `
-        <input type="radio" name="office" value="other" onclick="selectOffice('other')">
+    // "その他"オプションを最後に追加（パネル型で統一）
+    const otherPanel = document.createElement('div');
+    otherPanel.className = 'office-panel-cute';
+    otherPanel.setAttribute('data-office', 'other');
+    otherPanel.onclick = function() { selectOffice('other'); };
+    otherPanel.innerHTML = `
         <span class="office-icon">🏢</span>
-        <span>その他</span>
+        <span class="office-name">その他</span>
     `;
-    container.appendChild(otherLabel);
+    container.appendChild(otherPanel);
 }
 // 事務所オプションをロード
 async function loadOfficeOptions() {
@@ -346,12 +370,20 @@ async function loadOfficeOptions() {
         const officeRaw = await officeRes.json();
         window.officeRaw = officeRaw;
         console.log('[DEBUG] officeRaw:', officeRaw);
-        // filter条件を緩くして、数値キーの事務所名をすべて取得
-        const officeList = Object.values(officeRaw).filter(v =>
-            typeof v === 'string' &&
-            v.length > 0 &&
-            !v.match(/updateTime/i)
-        );
+        // 日付やupdateTimeなど事務所名以外を除外
+        const officeList = Object.values(officeRaw).filter(v => {
+            if (typeof v !== 'string') return false;
+            if (!v || v.trim() === '') return false;
+            // updateTimeや日付形式（YYYY-MM-DD）を除外
+            if (v.match(/updateTime/i)) return false;
+            // YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
+            if (v.match(/^\d{4}[-\/\.]\d{2}[-\/\.]\d{2}$/)) return false;
+            // YYYY-MM-DD HH:mm, YYYY/MM/DD HH:mm, YYYY.MM.DD HH:mm
+            if (v.match(/^\d{4}[-\/\.]\d{2}[-\/\.]\d{2} \d{2}:\d{2}$/)) return false;
+            // 数値のみ（例: 20250728）も除外
+            if (v.match(/^\d{8}$/)) return false;
+            return true;
+        });
         window.officeList = officeList;
         console.log('[DEBUG] officeList:', officeList);
         const officeMapping = await mappingRes.json();
@@ -363,6 +395,30 @@ async function loadOfficeOptions() {
         console.log('officeMapping direct:', window.officeMapping);
         if (officeList.length === 0 || typeof officeMapping !== 'object') throw new Error('事務所データが不正です');
         generateOfficeRadioButtons(officeList, officeMapping);
+
+        // VTuber管理タブの事務所フィルタ用プルダウンも同じロジックで生成
+        const filterSelect = document.getElementById('office-filter-select');
+        if (filterSelect) {
+            filterSelect.innerHTML = '';
+            // 先頭に「全ての事務所（フィルタなし）」を追加
+            const allOption = document.createElement('option');
+            allOption.value = '';
+            allOption.textContent = '全ての事務所';
+            filterSelect.appendChild(allOption);
+            // 事務所リストを追加
+            officeList.forEach(office => {
+                const key = office.trim();
+                const displayName = officeMapping[key] || office;
+                const option = document.createElement('option');
+                option.value = office;
+                option.textContent = displayName;
+                filterSelect.appendChild(option);
+            });
+            // 初期表示時に全件表示
+            filterSelect.addEventListener('change', searchVtubers);
+            // 初期化時に一度全件表示
+            setTimeout(() => { searchVtubers(); }, 0);
+        }
     } catch (error) {
         console.error('Office取得エラー:', error);
         // 追加: catch直後に個別console.log
@@ -725,18 +781,14 @@ window.loadOfficeOptions = loadOfficeOptions;
         function selectOffice(officeName) {
             selectedOffice = officeName;
             
-            // すべてのラジオボタンスタイルをリセット
-            document.querySelectorAll('.office-radio').forEach(radio => {
-                radio.classList.remove('selected');
+            // すべてのパネルの選択状態をリセット
+            document.querySelectorAll('.office-panel-cute').forEach(panel => {
+                panel.classList.remove('selected');
             });
-            
-            // 選択されたラジオボタンを強調
-            const selectedRadio = document.querySelector(`input[value="${officeName}"]`).closest('.office-radio');
-            selectedRadio.classList.add('selected');
-            
-            // ラジオボタンをチェック
-            document.querySelector(`input[value="${officeName}"]`).checked = true;
-            
+            // 選択されたパネルを強調
+            const selectedPanel = document.querySelector(`.office-panel-cute[data-office="${officeName}"]`);
+            if (selectedPanel) selectedPanel.classList.add('selected');
+
             // カスタム事務所名の表示/非表示
             toggleCustomOffice(officeName);
             
@@ -866,43 +918,105 @@ function refreshOfficeVtuberList(officeName) {
         }
 
         // タブ切り替え
-        function switchTab(tabName) {
-            // すべてのタブコンテンツを非表示
-            document.querySelectorAll('.tab-content').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            
-            // すべてのタブボタンを非アクティブ
-            document.querySelectorAll('.tab-button').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            
-            // 選択されたタブを表示
-            document.getElementById(tabName + '-tab').classList.add('active');
-            event.target.classList.add('active');
-            
-            // Office管理タブの場合はOffice Mappingを読み込み
-            if (tabName === 'office') {
-                loadOfficeMapping();
-            }
-            
-            // Add New VTuberタブの場合はOffice選択肢を読み込み
-            if (tabName === 'add') {
-                loadOfficeOptions();
-            }
-            
-            // Auto Discoverタブの場合は既存VTuberリストを読み込み
-            if (tabName === 'discover') {
-                loadVtubersForSeed();
-            }
-            
-            // VTuber管理タブの場合は登録済みVTuber一覧を読み込み
-            if (tabName === 'manage') {
-                loadRegisteredVtubers();
-            }
-        }
+function switchTab(tabName, event) {
+    // すべてのタブコンテンツを非表示
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.style.display = 'none';
+        tab.classList.remove('active');
+    });
+    // すべてのタブボタンを非アクティブ
+    document.querySelectorAll('.tab-button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    // 選択されたタブを表示
+    const tabContent = document.getElementById(tabName + '-tab');
+    if (tabContent) {
+        tabContent.style.display = 'block';
+        tabContent.classList.add('active');
+    }
+    // タブボタンにactiveを付与
+    if (event && event.target) {
+        event.target.classList.add('active');
+    } else {
+        // eventがない場合はdata-tab属性で該当ボタンを探す
+        const btn = document.querySelector('.tab-button[data-tab="' + tabName + '"]');
+        if (btn) btn.classList.add('active');
+    }
+    // Office管理タブの場合はOffice Mappingを読み込み
+    if (tabName === 'office') {
+        loadOfficeMapping();
+    }
+    // Add New VTuberタブの場合はOffice選択肢を読み込み
+    if (tabName === 'add') {
+        loadOfficeOptions();
+    }
+    // Auto Discoverタブの場合は既存VTuberリストを読み込み
+    if (tabName === 'discover') {
+        loadVtubersForSeed();
+    }
+    // VTuber管理タブの場合は登録済みVTuber一覧を読み込み
+    if (tabName === 'manage') {
+        loadRegisteredVtubers();
+    }
+}
 
-        // ...Office選択肢の動的生成はvtuber-data-manager-new.jsに集約...
+function searchVtubers() {
+    // 入力値取得
+    const searchInput = document.getElementById('vtuberSearchInput');
+    const filterSelect = document.getElementById('office-filter-select');
+    const keyword = searchInput ? searchInput.value.trim() : '';
+    const office = filterSelect ? filterSelect.value : '';
+    // VTuber一覧データ取得（キャッシュ or API）
+    fetchAllVtuberData().then(vtuberData => {
+        if (!vtuberData) return;
+        let vtuberList = [];
+        if (Array.isArray(vtuberData)) {
+            vtuberList = vtuberData;
+        } else if (vtuberData.vtuberDataList && Array.isArray(vtuberData.vtuberDataList)) {
+            vtuberList = vtuberData.vtuberDataList;
+        } else if (typeof vtuberData === 'object') {
+            vtuberList = Object.values(vtuberData).filter(v => v && typeof v === 'object' && v.office);
+        }
+        // 事務所フィルタ
+        let filtered = vtuberList;
+        if (office) {
+            filtered = filtered.filter(v => v.office === office);
+        }
+        // キーワードフィルタ
+        if (keyword) {
+            filtered = filtered.filter(v => {
+                return (v.name && v.name.includes(keyword)) ||
+                       (v.channelId && v.channelId.includes(keyword));
+            });
+        }
+        // 一覧表示
+        displayVtuberList(filtered);
+    });
+}
+window.searchVtubers = searchVtubers;
+
+// VTuber一覧をテーブルで表示（最低限の実装）
+function displayVtuberList(vtubers) {
+    const container = document.getElementById('vtuberListContainer');
+    if (!container) return;
+    if (!vtubers || vtubers.length === 0) {
+        container.innerHTML = '<div class="vtuber-list-empty">該当するVTuberがいません</div>';
+        document.getElementById('displayedVtuberCount').textContent = 0;
+        document.getElementById('totalVtuberCount').textContent = 0;
+        return;
+    }
+    // テーブル生成
+    let html = '<table class="vtuber-table"><thead><tr>' +
+        '<th>No</th><th>名前</th><th>チャンネルID</th><th>事務所</th><th>誕生日</th>' +
+        '</tr></thead><tbody>';
+    vtubers.forEach((v, i) => {
+        html += `<tr><td>${i+1}</td><td>${v.name || ''}</td><td>${v.channelId || ''}</td><td>${v.office || ''}</td><td>${v.birthday || ''}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+    document.getElementById('displayedVtuberCount').textContent = vtubers.length;
+    document.getElementById('totalVtuberCount').textContent = vtubers.length;
+}
 
         // ...Office管理・VTuber追加・重複チェック・Auto Discover等の関数はvtuber-data-manager-new.jsに集約...
 
@@ -1171,26 +1285,26 @@ function refreshOfficeVtuberList(officeName) {
             const bulkEntries = document.getElementById('bulk-entries');
             const entryId = `entry-${++bulkEntryCounter}`;
             
-            const entryHtml = `
-                <div class="vtuber-entry" id="${entryId}" data-entry-id="${entryId}">
-                    <div class="status-indicator status-checking" id="${entryId}-status">?</div>
-                    <div class="entry-field">
-                        <label>名前 *</label>
-                        <input type="text" placeholder="VTuber名" oninput="checkEntryDuplicates('${entryId}')" data-field="name">
-                    </div>
-                    <div class="entry-field">
-                        <label>チャンネルID/@Handle *</label>
-                        <input type="text" placeholder="UCxxxxxxxx または @handle" oninput="checkEntryDuplicates('${entryId}')" data-field="channel">
-                    </div>
-                    <div class="entry-field">
-                        <label>Twitter名</label>
-                        <input type="text" placeholder="twitter_id" oninput="checkEntryDuplicates('${entryId}')" data-field="twitter">
-                    </div>
-                    <div class="entry-actions">
-                        <button class="btn-remove" onclick="removeEntry('${entryId}')">削除</button>
-                    </div>
-                </div>
-            `;
+    const entryHtml = `
+        <form class="vtuber-entry vtuber-form vtuber-entry-row" id="${entryId}" data-entry-id="${entryId}" autocomplete="off" onsubmit="return false;" style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; background: #fff8fa; border-radius: 8px; border: 1px solid #ffe3e3; padding: 8px;">
+            <div class="status-indicator status-checking" id="${entryId}-status" style="width: 32px; text-align: center;">?</div>
+            <div class="form-group" style="flex: 1 1 120px; min-width: 100px;">
+                <input type="text" id="${entryId}-name" required placeholder="名前*" data-field="name" oninput="checkEntryDuplicates('${entryId}')" style="width: 100%; min-width: 80px; padding: 4px 8px; font-size: 14px;">
+            </div>
+            <div class="form-group" style="flex: 1 1 180px; min-width: 120px;">
+                <input type="text" id="${entryId}-channel" required placeholder="チャンネルID/@Handle*" data-field="channel" oninput="checkEntryDuplicates('${entryId}')" style="width: 100%; min-width: 100px; padding: 4px 8px; font-size: 14px;">
+            </div>
+            <div class="form-group" style="flex: 1 1 120px; min-width: 80px;">
+                <input type="text" id="${entryId}-twitter" placeholder="TwitterID" data-field="twitter" oninput="checkEntryDuplicates('${entryId}')" style="width: 100%; min-width: 60px; padding: 4px 8px; font-size: 14px;">
+            </div>
+            <div class="form-group" style="flex: 1 1 120px; min-width: 100px;">
+                <input type="date" id="${entryId}-birthday" required data-field="birthday" style="width: 100%; min-width: 80px; border: 2px solid #ffb6b9; border-radius: 8px; padding: 4px 8px; font-size: 14px; background: #fff0f6;">
+            </div>
+            <div class="form-buttons" style="flex: 0 0 60px;">
+                <button type="button" onclick="removeEntry('${entryId}')" class="btn-remove btn-secondary" style="padding: 4px 10px; font-size: 13px;">削除</button>
+            </div>
+        </form>
+    `;
             
             bulkEntries.insertAdjacentHTML('beforeend', entryHtml);
             updateBulkStats();

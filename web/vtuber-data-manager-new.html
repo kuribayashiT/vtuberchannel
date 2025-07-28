@@ -116,28 +116,20 @@
         <div id="add-tab" class="tab-content">
             <div class="section">
                 <h2>➕ Add New VTuber (Improved)</h2>
-                
-                <!-- 単体/一括切り替え -->
                 <div class="tab-switcher">
                     <button class="tab-switch-btn active" onclick="switchAddMode('single')">単体登録</button>
                     <button class="tab-switch-btn" onclick="switchAddMode('bulk')">一括登録</button>
                 </div>
-
-                <!-- 事務所選択（共通） -->
                 <div class="form-group">
                     <label>Office * （登録頻度の高い事務所を選択）</label>
                     <div id="office-radio-group" class="office-radio-group-cute">
-                    <!-- Office選択肢は動的に生成されます（generateOfficeRadioButtonsで生成） -->
-                    <div class="loading">Office選択肢を読み込み中...</div>
+                        <div class="loading">Office選択肢を読み込み中...</div>
+                    </div>
                 </div>
-                </div>
-                
                 <div class="form-group" id="customOfficeGroup" style="display: none;">
                     <label for="customOffice">Custom Office Name *</label>
                     <input type="text" id="customOffice" placeholder="事務所名を入力">
                 </div>
-
-                <!-- 単体登録モード -->
                 <div id="single-mode" class="add-mode">
                     <form id="addVtuberForm" class="vtuber-form" onsubmit="addNewVtuber(event)">
                         <div class="form-group">
@@ -145,14 +137,12 @@
                             <input type="text" id="vtuberName" required placeholder="VTuber名を入力" oninput="checkDuplicates('single')">
                             <div id="singleNameStatus" class="status-message"></div>
                         </div>
-                        
                         <div class="form-group">
                             <label for="channelId">Channel ID / @Handle *</label>
                             <input type="text" id="channelId" required placeholder="YouTubeチャンネルIDまたは@ハンドル名" oninput="checkDuplicates('single')">
                             <small>例: UCxxxxxxxxxxxxxxxxxxxxxxx (UCから始まる24文字) または @KurageuRoa</small>
                             <div id="singleChannelStatus" class="status-message"></div>
                         </div>
-                        
                         <div class="form-group">
                             <label for="twitterName">Twitter Name</label>
                             <input type="text" id="twitterName" placeholder="@なしのTwitterID" oninput="checkDuplicates('single')">
@@ -170,8 +160,6 @@
                         </div>
                     </form>
                 </div>
-
-                <!-- 一括登録モード -->
                 <div id="bulk-mode" class="add-mode" style="display: none;">
                     <div class="bulk-add-container">
                         <div class="bulk-controls">
@@ -195,14 +183,11 @@
                                 <button onclick="bulkAddVtubers()" class="btn-primary" id="bulkAddBtn">一括登録実行</button>
                             </div>
                         </div>
-                        
                         <div id="bulk-entries">
                             <!-- 動的に生成される一括登録エントリ -->
                         </div>
                     </div>
                 </div>
-                
-                <!-- 選択した事務所のVTuber一覧 -->
                 <div id="officeVtuberList" class="vtuber-list" style="display: none;">
                     <h4 id="officeListTitle">事務所のVTuber一覧</h4>
                     <div id="vtuberListContent">
@@ -210,8 +195,195 @@
                     </div>
                 </div>
             </div>
-
             <div id="addResult" class="section" style="display: none;"></div>
+        </div>
+
+        <!-- Auto Discover タブ -->
+        <div id="discover-tab" class="tab-content">
+            <div class="section">
+                <h2>🔍 Auto Discover VTubers</h2>
+                <p>YouTube APIを活用して未登録のVTuberを自動発見・登録します。</p>
+                <div class="tab-switcher">
+                    <button class="tab-switch-btn active" onclick="switchDiscoverMode('trending')">🔥 人気順発見</button>
+                    <button class="tab-switch-btn" onclick="switchDiscoverMode('office')">🏢 事務所別発見</button>
+                    <button class="tab-switch-btn" onclick="switchDiscoverMode('related')">🔗 関連チャンネル発見</button>
+                </div>
+                <div id="trending-discover" class="discover-mode">
+                    <div class="section">
+                        <h3>🔥 登録者数順で VTuber を発見</h3>
+                        <div class="form-group">
+                            <label>検索キーワード</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="trendingKeyword" placeholder="例: VTuber, バーチャル, 配信者" value="VTuber">
+                                <select id="trendingOrder">
+                                    <option value="relevance">関連度順</option>
+                                    <option value="viewCount">再生回数順</option>
+                                    <option value="rating">評価順</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>発見数</label>
+                            <select id="trendingMaxResults">
+                                <option value="10">10件</option>
+                                <option value="25" selected>25件</option>
+                                <option value="50">50件</option>
+                            </select>
+                        </div>
+                        <button onclick="discoverTrending()" class="btn-primary">🔍 人気VTuber発見開始</button>
+                    </div>
+                </div>
+                <div id="office-discover" class="discover-mode" style="display: none;">
+                    <div class="section">
+                        <h3>🏢 特定事務所の VTuber を発見</h3>
+                        <div class="form-group">
+                            <label>対象事務所</label>
+                            <select id="targetOffice">
+                                <option value="">事務所を選択...</option>
+                                <option value="hololive">hololive</option>
+                                <option value="nijisanji">にじさんじ</option>
+                                <option value="vspo">VSPO!</option>
+                                <option value="animare">あにまーれ</option>
+                                <option value="reaction">りあくと</option>
+                                <option value="honeystrap">ハニーストラップ</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>発見方法</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="officeKeyword" placeholder="事務所名 + VTuber で検索">
+                                <button onclick="updateOfficeKeyword()" class="btn-secondary">自動設定</button>
+                            </div>
+                        </div>
+                        <button onclick="discoverByOffice()" class="btn-primary">🏢 事務所別VTuber発見開始</button>
+                    </div>
+                </div>
+                <div id="related-discover" class="discover-mode" style="display: none;">
+                    <div class="section">
+                        <h3>🔗 既存VTuberの関連チャンネル発見</h3>
+                        <div class="form-group">
+                            <label>基準となるVTuber</label>
+                            <select id="seedVtuber">
+                                <option value="">読み込み中...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>発見数</label>
+                            <select id="relatedMaxResults">
+                                <option value="10">10件</option>
+                                <option value="15" selected>15件</option>
+                                <option value="25">25件</option>
+                            </select>
+                        </div>
+                        <button onclick="discoverRelated()" class="btn-primary">🔗 関連VTuber発見開始</button>
+                    </div>
+                </div>
+                <div id="discover-results" class="section" style="display: none;">
+                    <h3>🎯 発見されたVTuber</h3>
+                    <div class="bulk-controls">
+                        <div class="bulk-stats">
+                            <div class="stat-item">
+                                <span class="status-indicator status-valid">✓</span>
+                                <span>新規: <span id="newVtuberCount">0</span></span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="status-indicator status-duplicate">×</span>
+                                <span>既存: <span id="existingVtuberCount">0</span></span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="status-indicator status-checking">?</span>
+                                <span>解析中: <span id="analyzingCount">0</span></span>
+                            </div>
+                        </div>
+                        <div>
+                            <button onclick="selectAllNew()" class="btn-secondary">新規全選択</button>
+                            <button onclick="deselectAll()" class="btn-warning">全選択解除</button>
+                            <button onclick="autoRegisterSelected()" class="btn-success" id="autoRegisterBtn">選択したVTuberを自動登録</button>
+                        </div>
+                    </div>
+                    <div id="discovered-vtubers" class="vtuber-items-container">
+                        <!-- 発見されたVTuberが動的に表示されます -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VTuber管理 タブ -->
+        <div id="manage-tab" class="tab-content">
+            <div class="section">
+                <h2>👥 登録済みVTuber管理</h2>
+                <p>現在登録されているVTuberの一覧表示と削除が行えます。誤って登録したVTuberを削除する際にご利用ください。</p>
+                <div class="section">
+                    <h3>🔍 検索・フィルタ</h3>
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                        <input type="text" id="vtuberSearchInput" placeholder="VTuber名またはチャンネルIDで検索" 
+                               style="flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;"
+                               oninput="searchVtubers()" onkeyup="searchVtubers()">
+                        <select id="office-filter-select" style="min-width: 160px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;" onchange="searchVtubers()"></select>
+                        <button onclick="searchVtubers(true)" class="btn-primary">検索</button>
+                        <button onclick="resetVtuberSearch()" class="btn-secondary">リセット</button>
+                    </div>
+                </div>
+                <div class="section">
+                    <h3>⚡ 一括操作</h3>
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                        <button onclick="selectAllVtubers()" class="btn-secondary">全選択</button>
+                        <button onclick="deselectAllVtubers()" class="btn-secondary">全選択解除</button>
+                        <button onclick="deleteSelectedVtubers()" class="btn-danger" style="background-color: #dc3545;">選択したVTuberを削除</button>
+                    </div>
+                    <div id="vtuberSelectionStatus" style="color: #666; font-size: 14px; margin-bottom: 10px;">
+                        選択中: <span id="selectedVtuberCount">0</span>人
+                    </div>
+                </div>
+                <div class="section">
+                    <h3>📋 VTuber一覧</h3>
+                    <div id="vtuberListLoading" class="loading" style="display: none;">
+                        <div class="loading-spinner"></div>
+                        VTuber一覧を読み込み中...
+                    </div>
+                    <div id="vtuberListContainer" class="vtuber-list-container">
+                        <!-- VTuber一覧がここに表示される -->
+                    </div>
+                    <div id="vtuberListStats" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 14px;">
+                        合計: <span id="totalVtuberCount">0</span>人 | 
+                        表示中: <span id="displayedVtuberCount">0</span>人
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Office Management タブ -->
+        <div id="office-tab" class="tab-content">
+            <div class="section">
+                <h2>🏢 Office Management</h2>
+                <p>事務所の表示名マッピングを管理できます。新しい事務所を追加したり、既存の表示名を変更できます。</p>
+                <div class="section">
+                    <h3>現在のOffice Mapping</h3>
+                    <div id="officeMappingList" class="office-mapping-list">
+                        <div class="loading">読み込み中...</div>
+                    </div>
+                </div>
+                <div class="section">
+                    <h3>新しいOffice Mappingを追加</h3>
+                    <form id="addOfficeMappingForm" class="office-form" onsubmit="addOfficeMapping(event)">
+                        <div class="form-group">
+                            <label for="officeKey">Office Key (システム内部での識別子) *</label>
+                            <input type="text" id="officeKey" name="officeKey" required 
+                                   placeholder="例: newoffice, mycompany など（英数字のみ推奨）">
+                        </div>
+                        <div class="form-group">
+                            <label for="officeDisplayName">Display Name (画面表示用の名前) *</label>
+                            <input type="text" id="officeDisplayName" name="officeDisplayName" required 
+                                   placeholder="例: 新事務所, My Company など（日本語可）">
+                        </div>
+                        <div class="button-group">
+                            <button type="button" onclick="resetOfficeForm()" class="btn-secondary">Reset</button>
+                            <button type="submit" class="btn-primary">Add Office Mapping</button>
+                        </div>
+                    </form>
+                </div>
+                <div id="officeMappingResult" class="section" style="display: none;"></div>
+            </div>
         </div>
 
         <!-- Auto Discover タブ -->
@@ -348,11 +520,7 @@
                         <input type="text" id="vtuberSearchInput" placeholder="VTuber名またはチャンネルIDで検索" 
                                style="flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;"
                                oninput="searchVtubers()" onkeyup="searchVtubers()">
-                        <select id="officeFilterSelect" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;"
-                                onchange="searchVtubers()">
-                            <option value="">全ての事務所</option>
-                            <option value="personal">個人</option>
-                        </select>
+                        <select id="office-filter-select" style="min-width: 160px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;" onchange="searchVtubers()"></select>
                         <button onclick="searchVtubers(true)" class="btn-primary">検索</button>
                         <button onclick="resetVtuberSearch()" class="btn-secondary">リセット</button>
                     </div>
