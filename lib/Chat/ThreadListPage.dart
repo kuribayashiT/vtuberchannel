@@ -13,7 +13,8 @@ class ThreadListPage extends StatefulWidget {
   _ThreadListPageState createState() => _ThreadListPageState();
 }
 
-class _ThreadListPageState extends State<ThreadListPage> with TickerProviderStateMixin {
+class _ThreadListPageState extends State<ThreadListPage>
+    with TickerProviderStateMixin {
   // オフィス選択変更時のコールバック（最低限の再描画）
   void _onDataUpdated() {
     setState(() {});
@@ -34,6 +35,7 @@ class _ThreadListPageState extends State<ThreadListPage> with TickerProviderStat
     });
     await _fetchThreads();
   }
+
   final TextEditingController postController = TextEditingController();
   final FocusNode _postFocusNode = FocusNode();
   TabController? _tabController; // Nullable に変更
