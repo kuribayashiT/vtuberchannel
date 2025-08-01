@@ -1,12 +1,8 @@
-//import 'dart:html';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vtuberchannel/main.dart';
+import 'package:vtuberchannel/widgets/cute_loading_widget.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-// import 'dart:ui_web'
-    // as ui; // ui_web をインポート// ignore: avoid_web_libraries_in_flutter
-// import 'dart:html' as html; // Webアプリ用のdart:htmlをimport
 import 'package:flutter/foundation.dart' show kIsWeb; // kIsWebをimport
 
 /// WebViewアプリの状態を持つStatefulWidget
@@ -31,6 +27,7 @@ class _WebViewAppState extends State<WebViewPage> {
   late final WebViewController controller;
   bool _showMiniPlayerButton = false;
   String nowVidepID = "";
+  bool _isLoading = true;
   // late html.IFrameElement _iframeElement =
   //     html.IFrameElement(); // Webアプリ用のIFrameElement
   // late IFrameElement _iframeElement;
@@ -46,35 +43,37 @@ class _WebViewAppState extends State<WebViewPage> {
         );
       controller.setJavaScriptMode(JavaScriptMode.unrestricted);
       controller.setNavigationDelegate(
-        NavigationDelegate(//この中で色々設定する
-            onPageStarted: (String url) async {
-          setState(() {
-            _showMiniPlayerButton =
-                url.startsWith('https://m.youtube.com/watch?v=');
-            //_showMiniPlayerButton = change.url!.startsWith('https://www.youtube.com/watch?v=');
-            if (_showMiniPlayerButton) {
-              nowVidepID = extractVideoId(url);
-            }
-          });
-        }, onUrlChange: (UrlChange change) async {
-          setState(() {
-            _showMiniPlayerButton =
-                change.url!.startsWith('https://m.youtube.com/watch?v=');
-            //_showMiniPlayerButton = change.url!.startsWith('https://www.youtube.com/watch?v=');
-            if (_showMiniPlayerButton) {
-              nowVidepID = extractVideoId(change.url!);
-            }
-          });
-        }, onPageFinished: (String url) async {
-          setState(() {
-            _showMiniPlayerButton =
-                url.startsWith('https://m.youtube.com/watch?v=');
-            //_showMiniPlayerButton = change.url!.startsWith('https://www.youtube.com/watch?v=');
-            if (_showMiniPlayerButton) {
-              nowVidepID = extractVideoId(url);
-            }
-          });
-        }),
+        NavigationDelegate(
+          onPageStarted: (String url) async {
+            setState(() {
+              _isLoading = true;
+              _showMiniPlayerButton =
+                  url.startsWith('https://m.youtube.com/watch?v=');
+              if (_showMiniPlayerButton) {
+                nowVidepID = extractVideoId(url);
+              }
+            });
+          },
+          onUrlChange: (UrlChange change) async {
+            setState(() {
+              _showMiniPlayerButton =
+                  change.url!.startsWith('https://m.youtube.com/watch?v=');
+              if (_showMiniPlayerButton) {
+                nowVidepID = extractVideoId(change.url!);
+              }
+            });
+          },
+          onPageFinished: (String url) async {
+            setState(() {
+              _isLoading = false;
+              _showMiniPlayerButton =
+                  url.startsWith('https://m.youtube.com/watch?v=');
+              if (_showMiniPlayerButton) {
+                nowVidepID = extractVideoId(url);
+              }
+            });
+          },
+        ),
       );
     } else {
       // // registerElement();
@@ -96,8 +95,6 @@ class _WebViewAppState extends State<WebViewPage> {
   //   iframeElement.style.border = 'none';
   //   iframeElement.id = "page";
 
-
-
   //   // 既存の iframe 要素が存在する場合は削除
   //   var existingIframe = html.document.getElementById('page');
   //   if (existingIframe != null) {
@@ -105,7 +102,6 @@ class _WebViewAppState extends State<WebViewPage> {
   //   }else{
 
   //   }
-
 
   //   // WebView を表示
   //   // setState(() {
@@ -178,9 +174,16 @@ class _WebViewAppState extends State<WebViewPage> {
               ),
           ],
         ),
-        body: WebViewWidget(
-          controller: controller,
-        ),
+        body: _isLoading
+            ? const Center(
+                child: CuteLoadingWidget(
+                  message: 'Webページを読み込み中…',
+                  color: Color(0xFF888888), // グレー
+                ),
+              )
+            : WebViewWidget(
+                controller: controller,
+              ),
       );
     } else {
       return Scaffold(

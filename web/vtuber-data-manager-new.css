@@ -1,0 +1,341 @@
+/* vtuber-data-manager-new.css: HTMLから分離したスタイル */
+body {
+    font-family: Arial, sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f5f5f5;
+}
+.container {
+    background: white;
+    border-radius: 8px;
+    padding: 30px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+h1 {
+    color: #333;
+    text-align: center;
+    margin-bottom: 30px;
+}
+.section {
+    margin-bottom: 30px;
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background-color: #fafafa;
+}
+.section h2 {
+    margin-top: 0;
+    color: #555;
+}
+.button-group {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+}
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+.btn-success {
+    background-color: #28a745;
+    color: white;
+}
+.btn-success:hover {
+    background-color: #1e7e34;
+}
+.btn-warning {
+    background-color: #ffc107;
+    color: black;
+}
+.btn-warning:hover {
+    background-color: #d39e00;
+}
+.btn-danger {
+    background-color: #dc3545;
+    color: white;
+}
+.btn-danger:hover {
+    background-color: #a71e2a;
+}
+textarea {
+    width: 100%;
+    height: 200px;
+    margin: 10px 0;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+}
+.file-input {
+    margin: 10px 0;
+}
+.status {
+    padding: 10px;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+.status.success {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+.status.error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+.status.info {
+    background-color: #cce7ff;
+    border: 1px solid #99d6ff;
+    color: #004085;
+}
+.stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 15px 0;
+}
+.stat-card {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 15px;
+    text-align: center;
+}
+.stat-number {
+    font-size: 24px;
+    font-weight: bold;
+    color: #007bff;
+}
+.stat-label {
+    color: #666;
+    font-size: 14px;
+}
+#analysis-result {
+    max-height: 400px;
+    overflow-y: auto;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+}
+.progress {
+    width: 100%;
+    height: 20px;
+    background-color: #f0f0f0;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 10px 0;
+}
+.progress-bar {
+    height: 100%;
+    background-color: #007bff;
+    transition: width 0.3s ease;
+}
+.tab-container {
+    display: flex;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #ddd;
+}
+.tab-button {
+    background: none;
+    border: none;
+    padding: 15px 25px;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    font-size: 16px;
+    color: #666;
+    transition: all 0.3s;
+}
+.tab-button.active {
+    color: #007bff;
+    border-bottom-color: #007bff;
+    font-weight: bold;
+}
+.tab-button:hover {
+    background-color: #f8f9fa;
+    color: #007bff;
+}
+.tab-content {
+    display: none;
+}
+.tab-content.active {
+    display: block;
+}
+.vtuber-form {
+    background: white;
+    padding: 25px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.form-group {
+    margin-bottom: 20px;
+}
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #333;
+}
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+}
+.form-group small {
+    display: block;
+    margin-top: 5px;
+    color: #666;
+    font-size: 12px;
+}
+.form-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 30px;
+}
+.form-buttons button {
+    min-width: 120px;
+}
+.twitter-input-group label, .office-input-group label { font-size: 12px; color: #666; min-width: 60px; }
+.twitter-input, .office-select { flex: 1; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
+.twitter-input:disabled, .office-select:disabled { background-color: #f5f5f5; color: #999; }
+.vtuber-list-container { max-height: 600px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; }
+.vtuber-list-item { display: flex; align-items: center; padding: 12px 15px; border-bottom: 1px solid #eee; transition: background-color 0.2s; }
+.vtuber-list-item:hover { background-color: #f8f9fa; }
+.vtuber-list-item:last-child { border-bottom: none; }
+.vtuber-list-item.selected { background-color: #e3f2fd; }
+.vtuber-checkbox { margin-right: 15px; width: 18px; height: 18px; }
+.vtuber-list-info { flex: 1; display: flex; align-items: center; gap: 15px; }
+.vtuber-list-thumbnail { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid #ddd; }
+.vtuber-list-details { flex: 1; }
+.vtuber-list-name { font-weight: bold; font-size: 16px; color: #333; margin-bottom: 4px; }
+.vtuber-list-meta { display: flex; gap: 15px; font-size: 14px; color: #666; flex-wrap: wrap; }
+.vtuber-list-actions { display: flex; gap: 8px; }
+.btn-danger { background-color: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; }
+.office-radio-group-cute {
+    display: flex;
+    gap: 18px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    padding-bottom: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: #ffb6b9 #fff0f6;
+}
+.office-radio-group-cute::-webkit-scrollbar {
+    height: 8px;
+}
+.office-radio-group-cute::-webkit-scrollbar-thumb {
+    background: #ffb6b9;
+    border-radius: 4px;
+}
+.office-radio-group-cute::-webkit-scrollbar-track {
+    background: #fff0f6;
+}
+.tab-switch-btn {
+    background: #fff0f6;
+    border: 2px solid #ffb6b9;
+    border-radius: 18px;
+    padding: 8px 24px;
+    font-size: 16px;
+    cursor: pointer;
+    color: #dc3545;
+    font-weight: bold;
+    transition: box-shadow 0.2s, background 0.2s;
+}
+.tab-switch-btn.active {
+    background: #ffb6b9;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(255,182,185,0.18);
+    border-color: #dc3545;
+}
+.office-radio-cute {
+    display: flex;
+    align-items: center;
+    background: #fff0f6;
+    border: 2px solid #ffb6b9;
+    border-radius: 18px;
+    padding: 8px 18px;
+    font-size: 15px;
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+    box-shadow: 0 2px 8px rgba(255,182,185,0.08);
+    margin-bottom: 8px;
+}
+.office-radio-cute input[type="radio"] {
+    margin-right: 8px;
+    accent-color: #ffb6b9;
+    width: 18px;
+    height: 18px;
+}
+.office-radio-cute .office-icon {
+    font-size: 20px;
+    margin-right: 6px;
+}
+.office-radio-cute:hover {
+    box-shadow: 0 4px 16px rgba(255,182,185,0.18);
+    background: #ffe3ed;
+}
+.office-radio-cute input[type="radio"]:checked + .office-icon {
+    filter: drop-shadow(0 0 4px #ffb6b9);
+}
+.office-panel-cute {
+    display: flex;
+    align-items: center;
+    background: #f7f7fa;
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 10px 18px;
+    margin: 6px 8px 6px 0;
+    cursor: pointer;
+    transition: background 0.2s, border 0.2s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 120px;
+    max-width: 220px;
+    flex: 0 1 180px;
+    box-sizing: border-box;
+    word-break: break-all;
+}
+.office-panel-cute.selected {
+    background: #ffe3e3;
+    border-color: #ffb6b9;
+    box-shadow: 0 0 0 2px #ffb6b933;
+}
+.office-panel-cute .office-icon {
+    margin-right: 8px;
+    font-size: 18px;
+}
+.office-panel-cute .office-name {
+    font-weight: bold;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

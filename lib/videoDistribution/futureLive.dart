@@ -6,6 +6,7 @@ import 'package:vtuberchannel/main.dart';
 import 'package:vtuberchannel/sideMenu.dart';
 import '../googleCloudFunctions.dart';
 import 'videoDistribution.dart';
+import '../widgets/cute_loading_widget.dart';
 
 class FutureLive extends StatefulWidget {
   @override
@@ -110,7 +111,6 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
 
   @override
   Widget build(BuildContext context) {
-
     double height = calculateItemHeight(context);
     double screenWidth = MediaQuery.of(context).size.width;
     super.build(context);
@@ -124,13 +124,18 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
           future: _videoList,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return const CuteLoadingWidget(
+                  message: '配信予定を読み込み中…', color: Color(0xFF2563EB));
             } else if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
+              return Center(child: Text('Error: ${snapshot.error}'));
             } else {
               List<dynamic> data = snapshot.data!;
               if (data.isEmpty) {
-                return const Center(child: Text('配信予定の動画はありません'));
+                return CuteEmptyWidget(
+                    message: '配信予定の動画はありません',
+                    icon: const Icon(Icons.live_tv,
+                        size: 56, color: Color(0xFF2563EB)),
+                    color: const Color(0xFF2563EB));
               } else {
                 try {
                   if (row > 1) {
@@ -155,7 +160,8 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
                       itemCount: data.length,
                       itemBuilder: (context, index) {
                         return Column(children: [
-                          SizedBox(child: videoWidget(data[index], now, height)),
+                          SizedBox(
+                              child: videoWidget(data[index], now, height)),
                           if (!kIsWeb)
                             if (index % YoutubeNativeADInterval == 0)
                               Align(

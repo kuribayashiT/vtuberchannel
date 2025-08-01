@@ -5,14 +5,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ThreadDetailPage extends StatefulWidget {
-  // final String threadId;
-  // final String threadName;
+  final String threadId;
+  final String threadTitle;
 
-  // const ThreadDetailPage({
-  //   required this.threadId,
-  //   required this.threadName,
-  //   Key? key,
-  // }) : super(key: key);
+  const ThreadDetailPage({
+    required this.threadId,
+    required this.threadTitle,
+    Key? key,
+  }) : super(key: key);
 
   @override
   State<ThreadDetailPage> createState() => _ThreadDetailPageState();
@@ -28,7 +28,6 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
   final FocusNode _usernameFocusNode = FocusNode();
   final FocusNode _postFocusNode = FocusNode();
   @override
-
   void initState() {
     super.initState();
     // FocusNodeの状態変更を監視
@@ -38,11 +37,12 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
     _postFocusNode.addListener(() {
       setState(() {}); // フォーカス状態に応じてUIを更新
     });
-    // postStream = FirebaseFirestore.instance
-    //     .collection('posts')
-    //     .where('threadId', isEqualTo: widget.threadId)
-    //     .orderBy('createdAt', descending: false)
-    //     .snapshots();
+    // postStreamを初期化
+    postStream = FirebaseFirestore.instance
+        .collection('posts')
+        .where('threadId', isEqualTo: widget.threadId)
+        .orderBy('createdAt', descending: false)
+        .snapshots();
 
     _initializeUsername();
   }
@@ -109,6 +109,7 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
       print('Error adding post: $e');
     }
   }
+
   /// 投稿内容に応じたスクロール処理
   void _handlePostScroll(String content) {
     // アンカーリンクが含まれているか判定
@@ -126,6 +127,7 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
       _scrollToBottom();
     }
   }
+
   /// リストの一番下にスクロール
   void _scrollToBottom() {
     _scrollController.animateTo(
@@ -146,7 +148,8 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
       // 対応する投稿全体の一番下にスクロール
       final postRepliesKey = postKeys[postNo];
       if (postRepliesKey != null && postRepliesKey.currentContext != null) {
-        final RenderBox box = postRepliesKey.currentContext!.findRenderObject() as RenderBox;
+        final RenderBox box =
+            postRepliesKey.currentContext!.findRenderObject() as RenderBox;
         final position = box.localToGlobal(Offset.zero);
         _scrollController.animateTo(
           position.dy,
@@ -345,11 +348,13 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
                                 focusNode: _usernameFocusNode,
                                 controller: _usernameController,
                                 maxLength: 20,
-                                decoration:
-                                    const InputDecoration(labelText: "ユーザー名を入力"),
+                                decoration: const InputDecoration(
+                                    labelText: "ユーザー名を入力"),
                               ),
                             ),
-                            if (!_usernameFocusNode.hasFocus) const SizedBox(width: 48),  // ここにボタンを追加（キーボードが開いているときのみ表示）
+                            if (!_usernameFocusNode.hasFocus)
+                              const SizedBox(
+                                  width: 48), // ここにボタンを追加（キーボードが開いているときのみ表示）
                             Visibility(
                               visible: _usernameFocusNode.hasFocus,
                               child: IconButton(
@@ -385,7 +390,8 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
 
                                 if (userName.isEmpty) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('ユーザー名を入力してください')),
+                                    const SnackBar(
+                                        content: Text('ユーザー名を入力してください')),
                                   );
                                   return;
                                 }
@@ -395,7 +401,8 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
                                   postController.clear();
                                 } else {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('投稿内容を入力してください')),
+                                    const SnackBar(
+                                        content: Text('投稿内容を入力してください')),
                                   );
                                 }
                               },
@@ -407,7 +414,6 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
                   ],
                 ),
               ),
-
             ],
           ),
         ),
@@ -421,7 +427,7 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
     _usernameController.dispose();
     _scrollController.dispose();
 
-    _usernameFocusNode.dispose(); 
+    _usernameFocusNode.dispose();
     _postFocusNode.dispose(); // メモリリークを防ぐ
     super.dispose();
   }
@@ -454,12 +460,14 @@ class _ThreadDetailPageState extends State<ThreadDetailPage> {
     // 投稿を時系列順にソート
     final sortedPosts = posts.toList()
       ..sort((a, b) {
-        if(a['createdAt'] != null && a['createdAt'] is Timestamp && b['createdAt'] != null && b['createdAt'] is Timestamp ){
-
+        if (a['createdAt'] != null &&
+            a['createdAt'] is Timestamp &&
+            b['createdAt'] != null &&
+            b['createdAt'] is Timestamp) {
           final createdAtA = (a['createdAt'] as Timestamp).toDate();
           final createdAtB = (b['createdAt'] as Timestamp).toDate();
           return createdAtA.compareTo(createdAtB);
-        }else{
+        } else {
           return 0;
         }
       });

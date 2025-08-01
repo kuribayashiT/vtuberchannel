@@ -6,6 +6,7 @@ import 'package:vtuberchannel/sideMenu.dart';
 import '../googleCloudFunctions.dart';
 import 'videoDistribution.dart';
 import '../common.dart';
+import '../widgets/cute_loading_widget.dart';
 
 class PastLive extends StatefulWidget {
   @override
@@ -146,13 +147,18 @@ class _PastLive extends State<PastLive>
           future: _videoList,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return const CuteLoadingWidget(
+                  message: 'アーカイブを読み込み中…', color: Color(0xFF2563EB));
             } else if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
+              return Center(child: Text('Error: ${snapshot.error}'));
             } else {
               List<dynamic> data = snapshot.data!;
               if (data.isEmpty) {
-                return const Center(child: Text('配信済みの動画はありません'));
+                return CuteEmptyWidget(
+                    message: '配信済みの動画はありません',
+                    icon: const Icon(Icons.video_library,
+                        size: 56, color: Color(0xFF2563EB)),
+                    color: const Color(0xFF2563EB));
               } else {
                 try {
                   if (row > 1) {
@@ -196,7 +202,11 @@ class _PastLive extends State<PastLive>
                   }
                   // ignore: unused_catch_stack
                 } catch (e, stackTrace) {
-                  return const Center(child: Text('動画の読み込みに失敗しました。'));
+                  return CuteEmptyWidget(
+                      message: '動画の読み込みに失敗しました',
+                      icon: const Icon(Icons.error_outline,
+                          size: 56, color: Color(0xFF2563EB)),
+                      color: const Color(0xFF2563EB));
                 }
               }
             }

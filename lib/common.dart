@@ -41,10 +41,10 @@ String convertToJapanTime(String isoDateTime) {
 String convertToJapanDayTime(String isoDateTime) {
   try {
     DateTime dateTime = DateTime.parse(isoDateTime);
-    var japanTime = dateTime.toLocal();
-
-    String formattedTime = DateFormat('yyyy MM/dd HH:mm').format(japanTime);
-
+    // 端末のローカルタイムゾーンに変換
+    final localTime = dateTime.toLocal();
+    // フォーマット例: 2025/07/29 12:34
+    String formattedTime = DateFormat('yyyy/MM/dd HH:mm').format(localTime);
     return formattedTime;
   } catch (e) {
     return isoDateTime;
@@ -424,8 +424,7 @@ class CustomToast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
-      // IgnorePointerを使用して、トーストをタップイベントを無視するようにする
-      ignoring: true, // トーストがタップイベントを無視するように設定
+      ignoring: true,
       child: Material(
         color: Colors.transparent,
         child: Center(
@@ -434,18 +433,44 @@ class CustomToast extends StatelessWidget {
             bottom: true,
             child: Container(
               width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20.0, vertical: 18.0),
               constraints: BoxConstraints(
                   maxWidth: MediaQuery.of(context).size.width - 48.0),
               decoration: BoxDecoration(
-                color: Colors.grey[800]?.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(12.0),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFEF4444), Color(0xFFF472B6)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(28.0),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.18),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
-              child: Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.check_circle_rounded,
+                      color: Colors.white, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -640,7 +665,6 @@ List<dynamic> filterByOfficeVtuber(Map<String, dynamic> originalMap,
   return filteredList;
 }
 
-
 Map<String, List<dynamic>> filterEventsByOffice(
     List<dynamic> fetchedEvents, List<String> officeData) {
   Map<String, List<dynamic>> filteredEvents = {};
@@ -660,6 +684,7 @@ Map<String, List<dynamic>> filterEventsByOffice(
 
   return filteredEvents;
 }
+
 // ===============================
 // PushRegisterState
 // ===============================
@@ -708,8 +733,8 @@ class AdHelper {
     }
   }
 
-
-  DateTime lastInterstitialShown = DateTime.now().subtract(const Duration(minutes: 2));
+  DateTime lastInterstitialShown =
+      DateTime.now().subtract(const Duration(minutes: 2));
   final Duration _interstitialInterval = Duration(minutes: 2);
 
   static String get interstitialAdUnitId {
@@ -778,48 +803,61 @@ class AdHelper {
           size: 16.0));
 
   // Native Ads
-    final int maxNativeAds;
-    final List<NativeAd?> _nativeAds = [];
-    int _currentNativeAdIndex = 0;
+  final int maxNativeAds;
+  final List<NativeAd?> _nativeAds = [];
+  int _currentNativeAdIndex = 0;
 
-    AdHelper({this.maxNativeAds = 3});
+  AdHelper({this.maxNativeAds = 3});
 
-    void loadNativeAds() {
-      if (_nativeAds.length >= maxNativeAds) return;
-      for (int i = _nativeAds.length; i < maxNativeAds; i++) {
-        final ad = NativeAd(
-          adUnitId: nativeAdUnitId,
-          request: const AdRequest(),
-          factoryId: 'listTile',
-          listener: NativeAdListener(
-            onAdLoaded: (ad) => _nativeAds.add(ad as NativeAd),
-            onAdFailedToLoad: (ad, err) {
-              ad.dispose();
-              _nativeAds.add(null);
-            },
-          ),
-        );
-        ad.load();
-      }
+  void loadNativeAds() {
+    if (_nativeAds.length >= maxNativeAds) return;
+    for (int i = _nativeAds.length; i < maxNativeAds; i++) {
+      final ad = NativeAd(
+        adUnitId: nativeAdUnitId,
+        request: const AdRequest(),
+        factoryId: 'listTile',
+        listener: NativeAdListener(
+          onAdLoaded: (ad) => _nativeAds.add(ad as NativeAd),
+          onAdFailedToLoad: (ad, err) {
+            ad.dispose();
+            _nativeAds.add(null);
+          },
+        ),
+      );
+      ad.load();
     }
+  }
 
-    Widget buildNextNativeAdWidget() {
-      if (_nativeAds.isEmpty || _currentNativeAdIndex >= _nativeAds.length) {
-        loadNativeAds();
-        return const SizedBox();
-      }
-      final ad = _nativeAds[_currentNativeAdIndex];
-      _currentNativeAdIndex = (_currentNativeAdIndex + 1) % _nativeAds.length;
-      return ad != null ? AdWidget(ad: ad) : const SizedBox();
+  Widget buildNextNativeAdWidget() {
+    if (_nativeAds.isEmpty || _currentNativeAdIndex >= _nativeAds.length) {
+      loadNativeAds();
+      return const SizedBox();
     }
+    final ad = _nativeAds[_currentNativeAdIndex];
+    // 使い回し防止: 返却したadはリストからremoveして二重利用を防ぐ
+    if (ad != null) {
+      _nativeAds.removeAt(_currentNativeAdIndex);
+      // インデックス調整
+      if (_currentNativeAdIndex >= _nativeAds.length) {
+        _currentNativeAdIndex = 0;
+      }
+      return AdWidget(ad: ad);
+    } else {
+      _nativeAds.removeAt(_currentNativeAdIndex);
+      if (_currentNativeAdIndex >= _nativeAds.length) {
+        _currentNativeAdIndex = 0;
+      }
+      return const SizedBox();
+    }
+  }
 
-    void disposeNativeAds() {
-      for (final ad in _nativeAds) {
-        ad?.dispose();
-      }
-      _nativeAds.clear();
-      _currentNativeAdIndex = 0;
+  void disposeNativeAds() {
+    for (final ad in _nativeAds) {
+      ad?.dispose();
     }
+    _nativeAds.clear();
+    _currentNativeAdIndex = 0;
+  }
   // List<NativeAd?> nativeAds = [];
   // void loadNativeAds() {
   //   for (int i = 0; i < 1; i++) {
@@ -963,8 +1001,14 @@ class AdHelper {
 
   int _currentInterstitialAdAdIndex = 0;
   Future<void> interstitialAdShow() async {
-    if (DateTime.now().difference(lastInterstitialShown) > _interstitialInterval) {
-      adHelper.interstitialAdShow();
+    if (DateTime.now().difference(lastInterstitialShown) >
+        _interstitialInterval) {
+      // 無限再帰防止: 広告がロードされていない場合はreturnのみ
+      if (interstitialAds.isEmpty ||
+          _currentInterstitialAdAdIndex >= interstitialAds.length) {
+        loadInterstitialAds();
+        return;
+      }
       lastInterstitialShown = DateTime.now();
       int count = await _loadInterAdCount();
       count++;
@@ -1059,8 +1103,7 @@ Future<Uint8List?> captureScreenAndShare(
               onPressed: () {
                 // キャプチャをシェア
                 Share.shareFiles([imageFile.path],
-                    subject: 'アプリキャプチャをシェアします',
-                    text:url);
+                    subject: 'アプリキャプチャをシェアします', text: url);
                 Navigator.of(context).pop();
               },
               child: const Text('共有する'),

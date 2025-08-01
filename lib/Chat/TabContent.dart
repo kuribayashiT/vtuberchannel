@@ -1,3 +1,4 @@
+import '../../widgets/cute_loading_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/gestures.dart';
@@ -42,149 +43,160 @@ class _TabContentState extends State<TabContent>
     });
   }
 
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return Scaffold(
+      body: Stack(
+        children: [
+          CustomScrollView(
+            key: PageStorageKey<String>(widget.threadId),
+            controller: _scrollController,
+            slivers: [
+              // 1️⃣ ヘッダーを SliverPersistentHeader にする
+              // SliverPersistentHeader(
+              //   pinned: false, // スクロールで隠れるようにする
+              //   floating: false,
+              //   delegate: _HeaderDelegate(),
+              // ),
 
-@override
-Widget build(BuildContext context) {
-  super.build(context);
-  return Scaffold(
-    body: Stack(
-      children: [
-        CustomScrollView(
-          key: PageStorageKey<String>(widget.threadId),
-          controller: _scrollController,
-          slivers: [
-            // 1️⃣ ヘッダーを SliverPersistentHeader にする
-            // SliverPersistentHeader(
-            //   pinned: false, // スクロールで隠れるようにする
-            //   floating: false,
-            //   delegate: _HeaderDelegate(),
-            // ),
-
-            // 2️⃣ 投稿リスト（StreamBuilderで取得したデータ）
-            SliverToBoxAdapter(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: widget.postStream,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text('エラーが発生しました: ${snapshot.error}'),
-                    );
-                  }
-
-                  final posts = snapshot.data?.docs ?? [];
-                  if (posts.isEmpty) {
-                    return const Center(child: Text("まだ投稿がありません。"));
-                  }
-
-                  organizedPosts = _organizePosts(posts);
-
-                  return Column(
-                    children: List.generate(organizedPosts.length, (index) {
-                      final post = organizedPosts[index];
-                      final postNo = post['postNo'];
-                      final indentLevel = post['indentLevel'] as int;
-
-                      if (!postKeys.containsKey(postNo)) {
-                        postKeys[postNo] = GlobalKey();
-                      }
-
-                      return Container(
-                        key: postKeys[postNo],
-                        margin: EdgeInsets.only(left: 16.0 * indentLevel),
-                        child: ListTile(
-                          title: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "$postNo",
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    "${post['author']}",
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      post['createdAt'] != null && post['createdAt'] is Timestamp
-                                          ? _formatTimestamp(post['createdAt'] as Timestamp)
-                                          : '不明',
-                                      style: const TextStyle(fontSize: 12),
-                                      textAlign: TextAlign.right,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              RichText(
-                                text: TextSpan(
-                                  children: _parseContentWithAnchors(post['content']),
-                                  style: DefaultTextStyle.of(context).style,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton.icon(
-                                  icon: const Icon(Icons.reply, size: 16),
-                                  label: const Text("返信"),
-                                  onPressed: () {
-                                    setState(() {
-                                      postController.text = ">>$postNo ";
-                                      FocusScope.of(context).requestFocus(FocusNode());
-                                    });
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+              // 2️⃣ 投稿リスト（StreamBuilderで取得したデータ）
+              SliverToBoxAdapter(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: widget.postStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const CuteLoadingWidget(
+                        message: '投稿を読み込み中…',
+                        color: Color(0xFFF472B6),
                       );
-                    }),
-                  );
-                },
+                    }
+
+                    if (snapshot.hasError) {
+                      return CuteEmptyWidget(
+                        message: '投稿の取得に失敗しました',
+                        icon: Icon(Icons.error_outline,
+                            size: 56, color: Color(0xFFF472B6)),
+                        color: Color(0xFFF472B6),
+                      );
+                    }
+
+                    final posts = snapshot.data?.docs ?? [];
+                    if (posts.isEmpty) {
+                      return CuteEmptyWidget(
+                        message: 'まだ投稿がありません',
+                        icon: Icon(Icons.forum,
+                            size: 56, color: Color(0xFFF472B6)),
+                        color: Color(0xFFF472B6),
+                      );
+                    }
+
+                    organizedPosts = _organizePosts(posts);
+
+                    return Column(
+                      children: List.generate(organizedPosts.length, (index) {
+                        final post = organizedPosts[index];
+                        final postNo = post['postNo'];
+                        final indentLevel = post['indentLevel'] as int;
+
+                        if (!postKeys.containsKey(postNo)) {
+                          postKeys[postNo] = GlobalKey();
+                        }
+
+                        return Container(
+                          key: postKeys[postNo],
+                          margin: EdgeInsets.only(left: 16.0 * indentLevel),
+                          child: ListTile(
+                            title: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "$postNo",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      "${post['author']}",
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        post['createdAt'] != null &&
+                                                post['createdAt'] is Timestamp
+                                            ? _formatTimestamp(
+                                                post['createdAt'] as Timestamp)
+                                            : '不明',
+                                        style: const TextStyle(fontSize: 12),
+                                        textAlign: TextAlign.right,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                RichText(
+                                  text: TextSpan(
+                                    children: _parseContentWithAnchors(
+                                        post['content']),
+                                    style: DefaultTextStyle.of(context).style,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton.icon(
+                                    icon: const Icon(Icons.reply, size: 16),
+                                    label: const Text("返信"),
+                                    onPressed: () {
+                                      setState(() {
+                                        postController.text = ">>$postNo ";
+                                        FocusScope.of(context)
+                                            .requestFocus(FocusNode());
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+
+          // 3️⃣ 投稿フォーム（画面下部に固定）
+          Positioned(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 8,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: _buildPostForm(),
               ),
             ),
-          ],
-        ),
-
-        // 3️⃣ 投稿フォーム（画面下部に固定）
-        Positioned(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 8,
-          left: 0,
-          right: 0,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: _buildPostForm(),
-            ),
           ),
-        ),
-      ],
-    ),
-  );
-}
-
-
-
+        ],
+      ),
+    );
+  }
 
   Widget _buildPostForm() {
     return Padding(
@@ -277,7 +289,6 @@ Widget build(BuildContext context) {
 
     return spans;
   }
-
 
   String _formatTimestamp(Timestamp timestamp) {
     final dateTime = timestamp.toDate();
@@ -423,7 +434,7 @@ Widget build(BuildContext context) {
       // 一番最後の返信の `postNo` を取得
       final lastReply = replies.last;
       final lastReplyNo = lastReply['postNo'] as int;
-      
+
       // その `postNo` へスクロール
       _scrollToPost(lastReplyNo);
     } else {

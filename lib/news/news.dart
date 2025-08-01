@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:vtuberchannel/main.dart';
 import '../common.dart';
 import '../googleCloudFunctions.dart';
+import '../widgets/cute_loading_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class NewsPage extends StatefulWidget {
@@ -72,7 +73,6 @@ class _NewsPageState extends State<NewsPage>
       child: Scaffold(
         body: RefreshIndicator(
           onRefresh: () async {
-            // リフレッシュ開始
             setState(() {
               _isRefreshing = true;
             });
@@ -83,13 +83,21 @@ class _NewsPageState extends State<NewsPage>
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting ||
                   _isRefreshing) {
-                return const Center(child: Text('読み込み中'));
+                return const CuteLoadingWidget(
+                  message: 'ニュースを読み込み中…',
+                  color: Color(0xFFEF4444),
+                );
               } else if (snapshot.hasError) {
                 return Center(child: Text('Error: ${snapshot.error}'));
               } else {
-                List<dynamic> data = snapshot.data!;
+                List<dynamic> data = snapshot.data ?? [];
                 if (data.isEmpty) {
-                  return const Center(child: Text('閲覧可能なNewsはありません'));
+                  return CuteEmptyWidget(
+                    message: 'ニュースデータの取得に失敗しました（空データ）',
+                    icon: const Icon(Icons.error_outline,
+                        size: 56, color: Color(0xFFEF4444)),
+                    color: const Color(0xFFEF4444),
+                  );
                 } else {
                   return ListView.builder(
                       physics: const ClampingScrollPhysics(),
@@ -111,8 +119,7 @@ class _NewsPageState extends State<NewsPage>
                                   ),
                                 ),
                         ]);
-                      }
-                      );
+                      });
                 }
               }
             },
@@ -129,69 +136,146 @@ class _NewsPageState extends State<NewsPage>
       },
       child: Container(
         width: double.infinity,
-        height: 120.0,
-        margin: const EdgeInsets.all(8.0),
+        margin:
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 13), // マージン拡大
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 0), // 左右余白追加
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFEE2E2), Color(0xFFFDF2F8)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0xFFEF4444).withOpacity(0.13),
+              blurRadius: 32,
+              offset: Offset(0, 12),
+            ),
+          ],
+        ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            if (data['urlToImage'] != "")
-              Container(
-                width: 160.0,
-                height: 120.0,
-                margin: const EdgeInsets.only(right: 8.0),
-                child: data['urlToImage'] != null
-                    ? CachedNetworkImage(
-                        imageUrl: data['urlToImage'],
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.cover,
-                        errorWidget: (context, url, error) =>
-                            Image.asset('images/noImage1200300.png'))
-                    : Container(),
+            // サムネイル画像
+            if (data['urlToImage'] != null && data['urlToImage'] != "")
+              Padding(
+                padding: const EdgeInsets.only(
+                    left: 8.0,
+                    right: 14.0,
+                    top: 14.0,
+                    bottom: 14.0), // 画像の左右余白を調整
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: CachedNetworkImage(
+                    imageUrl: data['urlToImage'],
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
+                    errorWidget: (context, url, error) => Image.asset(
+                        'images/noImage1200300.png',
+                        width: 80,
+                        height: 80),
+                  ),
+                ),
               ),
+            // テキスト部
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Align(
-                    alignment: Alignment.centerRight, // テキストを右寄せにする
-                    child: Text(
-                      data['channel'],
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14.0,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
+              child: Padding(
+                padding: const EdgeInsets.only(
+                    right: 10.0, top: 10.0, bottom: 10.0), // 右・上下余白を調整
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3), // channel領域をさらに内側・小さく
+                      margin:
+                          const EdgeInsets.only(bottom: 7, left: 2), // 左に寄せる
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444),
+                        borderRadius: BorderRadius.circular(10), // 角丸12→10
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0xFFEF4444).withOpacity(0.13),
+                            blurRadius: 6,
+                            offset: Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        (data['channel'] == null ||
+                                (data['channel'] is String &&
+                                    data['channel'].trim().isEmpty))
+                            ? 'ブログ記事'
+                            : data['channel'],
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.0, // 小さめ
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          letterSpacing: 0.2,
+                        ),
                       ),
                     ),
-                  ),
-                  Container(
-                    constraints: const BoxConstraints(
-                      minHeight: 70.0, // 3行分の高さを指定
-                    ),
-                    child: Text(
+                    Text(
                       data['title'],
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          fontSize: 16.0, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(height: 8.0),
-                  Align(
-                    alignment: Alignment.centerRight, // テキストを右寄せにする
-                    child: 
-                      Text(
-                        convertToJapanDayTime(data['publishedAt']),
-                        style: const TextStyle(fontSize: 14.0, color: Colors.grey),
+                        fontSize: 14.0, // 小さめ
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black,
+                        height: 1.22,
+                        letterSpacing: 0.05,
                       ),
                     ),
-                ],
+                    const SizedBox(height: 8.0),
+                    Row(
+                      children: [
+                        const Icon(Icons.access_time,
+                            size: 15, color: Color(0xFFEF4444)),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatLocalTime(data['publishedAt']),
+                          style: const TextStyle(
+                              fontSize: 11.5,
+                              color: Color(0xFFEF4444),
+                              fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// 端末ローカルタイムゾーンで日付を表示
+  String _formatLocalTime(dynamic publishedAt) {
+    if (publishedAt == null) return "";
+    DateTime dt;
+    if (publishedAt is String) {
+      // タイムゾーン情報がなければUTCとしてパース
+      final str = publishedAt;
+      if (str.contains('T')) {
+        // ISO8601形式
+        dt = DateTime.parse(str).toLocal();
+      } else {
+        // タイムゾーン情報なし→UTCとしてパース
+        dt = DateTime.parse(str + 'Z').toLocal();
+      }
+    } else if (publishedAt is DateTime) {
+      dt = publishedAt.toLocal();
+    } else {
+      return publishedAt.toString();
+    }
+    return "${dt.year}/${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
   }
 }

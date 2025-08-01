@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:vtuberchannel/common.dart';
 import 'package:vtuberchannel/main.dart';
+import 'widgets/cute_loading_widget.dart';
 import 'package:vtuberchannel/sideMenu.dart';
 import 'googleCloudFunctions.dart';
 import 'package:collection/collection.dart';
@@ -130,13 +131,28 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             // ローディング中の表示
-            return const Center(
-              child: CircularProgressIndicator(),
+            return const CuteLoadingWidget(
+              message: 'Vtuberリストを読み込み中…',
+              color: Color(0xFF8B5CF6),
             );
           } else if (snapshot.hasError) {
             // エラーが発生した場合の表示
-            return Text('Error: ${snapshot.error}');
+            return CuteEmptyWidget(
+              message: 'Vtuberリストの取得に失敗しました',
+              icon:
+                  Icon(Icons.error_outline, size: 56, color: Color(0xFF8B5CF6)),
+              color: Color(0xFF8B5CF6),
+            );
           } else {
+            // データが揃った場合の表示
+            if (tabs == null || tabs!.isEmpty) {
+              return CuteEmptyWidget(
+                message: 'Vtuberリストがありません',
+                icon:
+                    Icon(Icons.person_off, size: 56, color: Color(0xFF8B5CF6)),
+                color: Color(0xFF8B5CF6),
+              );
+            }
             // データが揃った場合の表示
             if (tabs != null && tabs!.isNotEmpty) {
               return Stack(children: [
@@ -253,7 +269,9 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
                           },
                           body: TabBarView(
                             controller: _tabController,
-                            physics: kIsWeb ? const NeverScrollableScrollPhysics() : null, // Webの時だけスクロール禁止
+                            physics: kIsWeb
+                                ? const NeverScrollableScrollPhysics()
+                                : null, // Webの時だけスクロール禁止
                             children: tabs!
                                 .map<Widget>((Map<String, dynamic> dataMap) {
                               String channelThumbnail =
@@ -280,8 +298,7 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
                                             padding: const EdgeInsets.only(
                                                 top: 32.0),
                                             sliver: SliverFixedExtentList(
-                                              itemExtent:
-                                                  350,
+                                              itemExtent: 350,
                                               delegate:
                                                   SliverChildBuilderDelegate(
                                                 (BuildContext context,
@@ -501,7 +518,8 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
               ),
             ),
             Container(
-              margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 24.0),
+              margin:
+                  const EdgeInsets.symmetric(vertical: 8.0, horizontal: 24.0),
               child: Card(
                 color: Colors.white,
                 clipBehavior: Clip.antiAlias,
@@ -509,23 +527,27 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
                   borderRadius: BorderRadius.circular(8.0),
                 ),
                 elevation: 10,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  _buildTableCell('事務所名', office),
-                  _buildTableCell('名前', name),
-                  _buildTableCell('誕生日', birthday),
-                  _buildTableCell('登録者数', registNum),
-                  _buildTableCell('YouTube開設日', createDate),
-                  _buildTableCell('動画数', videoCount),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Center(
-                          child: _buildTableYoutubeLinkCell('YouTubeへ', channelID, vtuberName)),
-                      Center(
-                          child: _buildTableTwitterLinkCell('へ', twitterName, vtuberName)),
-                    ],
-                  ),
-                ]),
+                      _buildTableCell('事務所名', office),
+                      _buildTableCell('名前', name),
+                      _buildTableCell('誕生日', birthday),
+                      _buildTableCell('登録者数', registNum),
+                      _buildTableCell('YouTube開設日', createDate),
+                      _buildTableCell('動画数', videoCount),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Center(
+                              child: _buildTableYoutubeLinkCell(
+                                  'YouTubeへ', channelID, vtuberName)),
+                          Center(
+                              child: _buildTableTwitterLinkCell(
+                                  'へ', twitterName, vtuberName)),
+                        ],
+                      ),
+                    ]),
               ),
             ),
           ],
@@ -533,7 +555,6 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
       },
     );
   }
-
 
   Widget _buildTableCell(String label, String value) {
     return Padding(
@@ -745,8 +766,10 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
               ),
             ),
             Container(
-              height: isWeb ? 290 : 246,//containerHeight ?? 246, // Webの場合に高さを自動調整
-              margin: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 22.0),
+              height:
+                  isWeb ? 290 : 246, //containerHeight ?? 246, // Webの場合に高さを自動調整
+              margin:
+                  const EdgeInsets.symmetric(vertical: 12.0, horizontal: 22.0),
               child: CustomCartCard(dataMap),
             ),
           ],

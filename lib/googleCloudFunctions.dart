@@ -61,7 +61,7 @@ class GoogleCloudFunctions {
       //   }
       // } else {
       // iOSやAndroid向けの処理をここに書く
-      
+
       adHelper.interstitialAdShow();
       Response response = await Dio().get(
         'https://storage.googleapis.com/vtuber-335811.appspot.com/officedataList.json',
@@ -131,8 +131,6 @@ class GoogleCloudFunctions {
       print('lastUpdate: $lastUpdate');
       print('DateTime.now(): ${DateTime.now()}');
       // print('Difference in minutes: ${DateTime.now().difference(lastUpdate!).inMinutes}');
-
-
 
       if (cachedLivesStrings != null &&
           lastUpdate != null &&
@@ -357,44 +355,48 @@ class GoogleCloudFunctions {
           return jsonDecode(jsonString) as Map<String, dynamic>;
         }).toList();
         List<dynamic> cachedKeyCachedNews = cachedNews;
+        print('[NewsCache] loaded: count=${cachedKeyCachedNews.length}');
         return cachedKeyCachedNews;
       }
       Response response = await Dio().get(
         'https://storage.googleapis.com/vtuber-335811.appspot.com/news.json',
         options: Options(responseType: ResponseType.plain, headers: {
-          'Access-Control-Allow-Origin': '*', // すべてのオリジンからのリクエストを許可
-          // 必要に応じて、他のCORS関連のヘッダーを追加することもできます
+          'Access-Control-Allow-Origin': '*',
         }),
         queryParameters: {
-          'timestamp':
-              DateTime.now().millisecondsSinceEpoch.toString(), // 一意のパラメータ
+          'timestamp': DateTime.now().millisecondsSinceEpoch.toString(),
         },
       );
 
+      print('[NewsAPI] status: ${response.statusCode}');
+      print(
+          '[NewsAPI] raw: ${response.data?.toString().substring(0, response.data.toString().length > 500 ? 500 : response.data.toString().length)}');
+
       if (response.statusCode == 200) {
-        // レスポンスの内容を文字列として取得
         final String responseData = response.data;
-
-        // responseDataがStringの場合、JSONとしてパースする
-        final List<dynamic> news = jsonDecode(responseData);
-
-        // JSONとしてパース
-        List<String> stringList = [];
-        for (var _news in news) {
-          String jsonString = jsonEncode(_news);
-          stringList.add(jsonString);
+        try {
+          final List<dynamic> news = jsonDecode(responseData);
+          print('[NewsAPI] parsed count: ${news.length}');
+          List<String> stringList = [];
+          for (var _news in news) {
+            String jsonString = jsonEncode(_news);
+            stringList.add(jsonString);
+          }
+          prefs.setStringList(cacheKeyCachedNews, stringList);
+          prefs.setString(
+              lastUpdateKeyCachedNews, DateTime.now().toIso8601String());
+          return news;
+        } catch (e) {
+          print('[NewsAPI] JSON parse error: $e');
+          return [];
         }
-        prefs.setStringList(cacheKeyCachedNews, stringList);
-        prefs.setString(
-            lastUpdateKeyCachedNews, DateTime.now().toIso8601String());
-
-        return news;
       } else {
-        print('Failed to load data. Status code: ${response.statusCode}');
+        print(
+            '[NewsAPI] Failed to load data. Status code: ${response.statusCode}');
         return [];
       }
     } catch (e) {
-      print('Error fetching data: $e');
+      print('[NewsAPI] Error fetching data: $e');
       return [];
     }
   }
@@ -537,38 +539,38 @@ class GoogleCloudFunctions {
       //     return [];
       //   }
       // } else {
-        Response response = await Dio().get(
-          'https://storage.googleapis.com/vtuber-335811.appspot.com/rankingYoutubeRegiData.json',
-          options: Options(responseType: ResponseType.plain, headers: {
-            'Access-Control-Allow-Origin': '*', // すべてのオリジンからのリクエストを許可
-            // 必要に応じて、他のCORS関連のヘッダーを追加することもできます
-          }),
-          queryParameters: {
-            'timestamp':
-                DateTime.now().millisecondsSinceEpoch.toString(), // 一意のパラメータ
-          },
-        );
+      Response response = await Dio().get(
+        'https://storage.googleapis.com/vtuber-335811.appspot.com/rankingYoutubeRegiData.json',
+        options: Options(responseType: ResponseType.plain, headers: {
+          'Access-Control-Allow-Origin': '*', // すべてのオリジンからのリクエストを許可
+          // 必要に応じて、他のCORS関連のヘッダーを追加することもできます
+        }),
+        queryParameters: {
+          'timestamp':
+              DateTime.now().millisecondsSinceEpoch.toString(), // 一意のパラメータ
+        },
+      );
 
-        if (response.statusCode == 200) {
-          // レスポンスの内容を文字列として取得
-          final String responseData = response.data;
+      if (response.statusCode == 200) {
+        // レスポンスの内容を文字列として取得
+        final String responseData = response.data;
 
-          final List<dynamic> RankingDataYoutube = jsonDecode(responseData);
-          List<String> stringList = [];
-          // ignore: non_constant_identifier_names
-          for (var video in RankingDataYoutube) {
-            String jsonString = jsonEncode(video);
-            stringList.add(jsonString);
-          }
-          prefs.setStringList(cacheKeyCachedRankingDataYoutube, stringList);
-          prefs.setString(
-              lastUpdateKeyCachedDataYoutube, DateTime.now().toIso8601String());
-
-          return RankingDataYoutube;
-        } else {
-          print('Failed to load data. Status code: ${response.statusCode}');
-          return [];
+        final List<dynamic> RankingDataYoutube = jsonDecode(responseData);
+        List<String> stringList = [];
+        // ignore: non_constant_identifier_names
+        for (var video in RankingDataYoutube) {
+          String jsonString = jsonEncode(video);
+          stringList.add(jsonString);
         }
+        prefs.setStringList(cacheKeyCachedRankingDataYoutube, stringList);
+        prefs.setString(
+            lastUpdateKeyCachedDataYoutube, DateTime.now().toIso8601String());
+
+        return RankingDataYoutube;
+      } else {
+        print('Failed to load data. Status code: ${response.statusCode}');
+        return [];
+      }
       // }
     } catch (e) {
       print('Error fetching data: $e');
@@ -731,40 +733,40 @@ class GoogleCloudFunctions {
       //     return [];
       //   }
       // } else {
-        Response response = await Dio().get(
-          'https://storage.googleapis.com/vtuber-335811.appspot.com/weeklyLiveViewRanking.json',
-          options: Options(responseType: ResponseType.plain, headers: {
-            'Access-Control-Allow-Origin': '*', // すべてのオリジンからのリクエストを許可
-            // 必要に応じて、他のCORS関連のヘッダーを追加することもできます
-          }),
-          queryParameters: {
-            'timestamp':
-                DateTime.now().millisecondsSinceEpoch.toString(), // 一意のパラメータ
-          },
-        );
+      Response response = await Dio().get(
+        'https://storage.googleapis.com/vtuber-335811.appspot.com/weeklyLiveViewRanking.json',
+        options: Options(responseType: ResponseType.plain, headers: {
+          'Access-Control-Allow-Origin': '*', // すべてのオリジンからのリクエストを許可
+          // 必要に応じて、他のCORS関連のヘッダーを追加することもできます
+        }),
+        queryParameters: {
+          'timestamp':
+              DateTime.now().millisecondsSinceEpoch.toString(), // 一意のパラメータ
+        },
+      );
 
-        if (response.statusCode == 200) {
-          // レスポンスの内容を文字列として取得
-          final String responseData = response.data;
+      if (response.statusCode == 200) {
+        // レスポンスの内容を文字列として取得
+        final String responseData = response.data;
 
-          final List<dynamic> RankingDataWeeklyLiveView =
-              jsonDecode(responseData);
-          List<String> stringList = [];
-          // ignore: non_constant_identifier_names
-          for (var video in RankingDataWeeklyLiveView) {
-            String jsonString = jsonEncode(video);
-            stringList.add(jsonString);
-          }
-          prefs.setStringList(
-              cacheKeyCachedRankingDataWeeklyLiveView, stringList);
-          prefs.setString(lastUpdateKeyCachedDataWeeklyLiveView,
-              DateTime.now().toIso8601String());
-
-          return RankingDataWeeklyLiveView;
-        } else {
-          print('Failed to load data. Status code: ${response.statusCode}');
-          return [];
+        final List<dynamic> RankingDataWeeklyLiveView =
+            jsonDecode(responseData);
+        List<String> stringList = [];
+        // ignore: non_constant_identifier_names
+        for (var video in RankingDataWeeklyLiveView) {
+          String jsonString = jsonEncode(video);
+          stringList.add(jsonString);
         }
+        prefs.setStringList(
+            cacheKeyCachedRankingDataWeeklyLiveView, stringList);
+        prefs.setString(lastUpdateKeyCachedDataWeeklyLiveView,
+            DateTime.now().toIso8601String());
+
+        return RankingDataWeeklyLiveView;
+      } else {
+        print('Failed to load data. Status code: ${response.statusCode}');
+        return [];
+      }
       // }
     } catch (e) {
       print('Error fetching data: $e');
@@ -830,45 +832,45 @@ class GoogleCloudFunctions {
       //     return [];
       //   }
       // } else {
-        Response response = await Dio().get(
-          'https://storage.googleapis.com/vtuber-335811.appspot.com/rankingYoutubeVideoCountData.json',
-          options: Options(responseType: ResponseType.plain, headers: {
-            'Access-Control-Allow-Origin': '*', // すべてのオリジンからのリクエストを許可
-            // 必要に応じて、他のCORS関連のヘッダーを追加することもできます
-          }),
-          queryParameters: {
-            'timestamp':
-                DateTime.now().millisecondsSinceEpoch.toString(), // 一意のパラメータ
-          },
-        );
+      Response response = await Dio().get(
+        'https://storage.googleapis.com/vtuber-335811.appspot.com/rankingYoutubeVideoCountData.json',
+        options: Options(responseType: ResponseType.plain, headers: {
+          'Access-Control-Allow-Origin': '*', // すべてのオリジンからのリクエストを許可
+          // 必要に応じて、他のCORS関連のヘッダーを追加することもできます
+        }),
+        queryParameters: {
+          'timestamp':
+              DateTime.now().millisecondsSinceEpoch.toString(), // 一意のパラメータ
+        },
+      );
 
-        if (response.statusCode == 200) {
-          // レスポンスの内容を文字列として取得
-          final String responseData = response.data;
+      if (response.statusCode == 200) {
+        // レスポンスの内容を文字列として取得
+        final String responseData = response.data;
 
-          final List<dynamic> RankingDataVNum = jsonDecode(responseData);
+        final List<dynamic> RankingDataVNum = jsonDecode(responseData);
 
-          // 空のオブジェクトをリストから削除
-          final List<dynamic> validData = RankingDataVNum.where((item) {
-            // 空のオブジェクトの判定（{} のようなものを除外）
-            return item.isNotEmpty;
-          }).toList();
+        // 空のオブジェクトをリストから削除
+        final List<dynamic> validData = RankingDataVNum.where((item) {
+          // 空のオブジェクトの判定（{} のようなものを除外）
+          return item.isNotEmpty;
+        }).toList();
 
-          List<String> stringList = [];
-          for (var video in validData) {
-            String jsonString = jsonEncode(video);
-            stringList.add(jsonString);
-          }
-
-          prefs.setStringList(cacheKeyCachedRankingDataVNum, stringList);
-          prefs.setString(
-              lastUpdateKeyCachedDataVNum, DateTime.now().toIso8601String());
-
-          return validData;
-        } else {
-          print('Failed to load data. Status code: ${response.statusCode}');
-          return [];
+        List<String> stringList = [];
+        for (var video in validData) {
+          String jsonString = jsonEncode(video);
+          stringList.add(jsonString);
         }
+
+        prefs.setStringList(cacheKeyCachedRankingDataVNum, stringList);
+        prefs.setString(
+            lastUpdateKeyCachedDataVNum, DateTime.now().toIso8601String());
+
+        return validData;
+      } else {
+        print('Failed to load data. Status code: ${response.statusCode}');
+        return [];
+      }
       // }
     } catch (e) {
       print('Error fetching data: $e');

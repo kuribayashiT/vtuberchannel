@@ -6,6 +6,7 @@ import 'package:vtuberchannel/sideMenu.dart';
 import '../googleCloudFunctions.dart';
 import 'videoDistribution.dart';
 import '../common.dart';
+import '../widgets/cute_loading_widget.dart';
 
 bool showTodayFirstView = true;
 
@@ -199,13 +200,18 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
             future: dataForToday,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return const CuteLoadingWidget(
+                    message: '配信予定を読み込み中…', color: Color(0xFF2563EB));
               } else if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
+                return Center(child: Text('Error: ${snapshot.error}'));
               } else {
                 List dataForToday = snapshot.data!;
                 if (dataForToday.isEmpty) {
-                  return const Center(child: Text('配信予定の動画はありません'));
+                  return CuteEmptyWidget(
+                      message: '配信予定の動画はありません',
+                      icon: const Icon(Icons.live_tv,
+                          size: 56, color: Color(0xFF2563EB)),
+                      color: const Color(0xFF2563EB));
                 } else {
                   if (row > 1) {
                     return GridView.builder(
@@ -266,29 +272,36 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
             future: dataForSeparateToday,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return const CuteLoadingWidget(
+                    message: '配信予定を読み込み中…', color: Color(0xFF2563EB));
               } else if (snapshot.hasError) {
                 return Center(child: Text('Error: ${snapshot.error}'));
               } else {
                 List dataForHours = snapshot.data!;
                 return TabBarView(
-                  physics: kIsWeb ? const NeverScrollableScrollPhysics() : null, // Webの時だけスクロール禁止
+                  physics: kIsWeb
+                      ? const NeverScrollableScrollPhysics()
+                      : null, // Webの時だけスクロール禁止
                   children: List.generate(24, (hourIndex) {
                     List<dynamic> dataForHour = dataForHours[hourIndex];
                     if (dataForHour.isEmpty) {
                       return Column(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            const Center(child: Text("この時間の配信予定はまだありません。")),
+                            CuteEmptyWidget(
+                                message: 'この時間の配信予定はまだありません',
+                                icon: const Icon(Icons.access_time,
+                                    size: 56, color: Color(0xFF2563EB)),
+                                color: const Color(0xFF2563EB)),
                             // if (adHelper.nativeAds.isNotEmpty)
-                              Align(
-                                alignment: Alignment.topCenter,
-                                child: SizedBox(
-                                  width: screenWidth,
-                                  height: height,
-                                  child: adHelper.buildNextNativeAdWidget(),
-                                ),
+                            Align(
+                              alignment: Alignment.topCenter,
+                              child: SizedBox(
+                                width: screenWidth,
+                                height: height,
+                                child: adHelper.buildNextNativeAdWidget(),
                               ),
+                            ),
                           ]);
                     } else {
                       if (row > 1) {
@@ -336,14 +349,15 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
                                       child: SizedBox(
                                         width: adHelper.bannerAds[0]!.size.width
                                             .toDouble(),
-                                        height: adHelper.bannerAds[0]!.size.height
+                                        height: adHelper
+                                            .bannerAds[0]!.size.height
                                             .toDouble(),
-                                        child:
-                                            adHelper.buildBannerAdWidgetNextAd(),
+                                        child: adHelper
+                                            .buildBannerAdWidgetNextAd(),
                                       ),
                                     ),
-                                if (index == dataForHour.length - 1)
-                                  const SizedBox(height: 70)
+                              if (index == dataForHour.length - 1)
+                                const SizedBox(height: 70)
                             ]);
                           },
                         );
@@ -424,7 +438,9 @@ class CustomAppBar extends StatelessWidget {
           String label = '${index.toString().padLeft(2, '0')}:00';
           return Tab(text: label);
         }),
-        labelPadding: kIsWeb && MediaQuery.of(context).size.width > 1000 ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 8.0),
+        labelPadding: kIsWeb && MediaQuery.of(context).size.width > 1000
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(horizontal: 8.0),
       ),
     );
   }

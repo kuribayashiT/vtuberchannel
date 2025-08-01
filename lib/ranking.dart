@@ -3,10 +3,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'common.dart';
+import 'widgets/cute_loading_widget.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:vtuberchannel/common.dart';
+// import 'package:vtuberchannel/common.dart';
 import 'package:vtuberchannel/googleCloudFunctions.dart';
 import 'package:vtuberchannel/main.dart';
 import 'package:vtuberchannel/sideMenu.dart';
@@ -138,7 +140,7 @@ class _ranking extends State<ranking>
             borderRadius:
                 BorderRadius.circular(30), // FloatingActionButtonを丸くする
           ),
-          child: const Icon(Icons.arrow_upward,color: Colors.white, size: 38),
+          child: const Icon(Icons.arrow_upward, color: Colors.white, size: 38),
         ),
         floatingActionButtonLocation:
             FloatingActionButtonLocation.endFloat, // 中央に配置
@@ -151,10 +153,12 @@ class _ranking extends State<ranking>
               Expanded(
                 child: TabBarView(
                   children: [
-                  buildWeeklyLiveViewRankingLayoutWrapper(
-                    context, _weeklyLiveViewData.then((data) => 
-                      data.map((e) => e as Map<String, dynamic>).toList()), 
-                    'weeklyLiveView'),
+                    buildWeeklyLiveViewRankingLayoutWrapper(
+                        context,
+                        _weeklyLiveViewData.then((data) => data
+                            .map((e) => e as Map<String, dynamic>)
+                            .toList()),
+                        'weeklyLiveView'),
                     _buildFutureBuilder(_youtubeData, buildRankingLayout,
                         'youtubeSubscriberCount'),
                     _buildFutureBuilder(
@@ -189,47 +193,60 @@ class _ranking extends State<ranking>
     );
   }
 
-Widget buildWeeklyLiveViewRankingLayoutWrapper(
-    BuildContext context, Future<List<Map<String, dynamic>>> future, String key) {
-  final now = DateTime.now();
-  final sevenDaysAgo = now.subtract(const Duration(days: 6)); 
-  final dateFormat = DateFormat('MM/dd');
+  Widget buildWeeklyLiveViewRankingLayoutWrapper(BuildContext context,
+      Future<List<Map<String, dynamic>>> future, String key) {
+    final now = DateTime.now();
+    final sevenDaysAgo = now.subtract(const Duration(days: 6));
+    final dateFormat = DateFormat('MM/dd');
 
-  return Column(
-    children: [
-      Container(
-        padding: const EdgeInsets.symmetric(vertical: 8.0), // 上下に少し余白
-        child: Text(
-          '${dateFormat.format(sevenDaysAgo)} 〜 ${dateFormat.format(now)}'"の同時視聴者数"
-          ,
-          style: const TextStyle(fontSize: 16.0, fontWeight: FontWeight.bold),
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 8.0), // 上下に少し余白
+          child: Text(
+            '${dateFormat.format(sevenDaysAgo)} 〜 ${dateFormat.format(now)}'
+            "の同時視聴者数",
+            style: const TextStyle(fontSize: 16.0, fontWeight: FontWeight.bold),
+          ),
         ),
-      ),
-      Expanded(
-        child: FutureBuilder<List<Map<String, dynamic>>>(
-          future: future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            } else if (snapshot.hasError) {
-              return const Center(child: Text('エラーが発生しました'));
-            } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return const Center(child: Text('データがありません'));
-            }
-            return ListView.builder(
-              controller: _scrollController,
-              itemCount: snapshot.data!.length,
-              itemBuilder: (context, index) {
-                return buildWeeklyLiveViewRankingLayout(
-                    context, snapshot.data![index], key);
-              },
-            );
-          },
+        Expanded(
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const CuteLoadingWidget(
+                  message: 'ランキングを読み込み中…',
+                  color: Color(0xFFF59E42),
+                );
+              } else if (snapshot.hasError) {
+                return CuteEmptyWidget(
+                  message: 'ランキングの取得に失敗しました',
+                  icon: Icon(Icons.error_outline,
+                      size: 56, color: Color(0xFFF59E42)),
+                  color: Color(0xFFF59E42),
+                );
+              } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return CuteEmptyWidget(
+                  message: 'ランキングデータがありません',
+                  icon: Icon(Icons.leaderboard,
+                      size: 56, color: Color(0xFFF59E42)),
+                  color: Color(0xFFF59E42),
+                );
+              }
+              return ListView.builder(
+                controller: _scrollController,
+                itemCount: snapshot.data!.length,
+                itemBuilder: (context, index) {
+                  return buildWeeklyLiveViewRankingLayout(
+                      context, snapshot.data![index], key);
+                },
+              );
+            },
+          ),
         ),
-      ),
-    ],
-  );
-}
+      ],
+    );
+  }
 
   Widget _buildFutureBuilder(
     Future<List<dynamic>> futureData,
@@ -241,13 +258,24 @@ Widget buildWeeklyLiveViewRankingLayoutWrapper(
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting ||
             _isRefreshing) {
-          return const Center(child: CircularProgressIndicator());
+          return const CuteLoadingWidget(
+            message: 'ランキングを読み込み中…',
+            color: Color(0xFFF59E42),
+          );
         } else if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
+          return CuteEmptyWidget(
+            message: 'ランキングの取得に失敗しました',
+            icon: Icon(Icons.error_outline, size: 56, color: Color(0xFFF59E42)),
+            color: Color(0xFFF59E42),
+          );
         } else {
           List<dynamic> data = snapshot.data ?? [];
           if (data.isEmpty) {
-            return const Center(child: Text('ランキングの読み込みに失敗しました。'));
+            return CuteEmptyWidget(
+              message: 'ランキングデータがありません',
+              icon: Icon(Icons.leaderboard, size: 56, color: Color(0xFFF59E42)),
+              color: Color(0xFFF59E42),
+            );
           } else {
             return ListView.builder(
               controller: _scrollController, // ScrollControllerをListViewに設定
@@ -269,86 +297,65 @@ Widget buildWeeklyLiveViewRankingLayoutWrapper(
   Widget buildRankingLayout(Map<String, dynamic> data, String key) {
     return Card(
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0), // カードの角丸
+        borderRadius: BorderRadius.circular(12.0),
       ),
-      margin: const EdgeInsets.all(4.0), // カードの外側の余白
-      child: GestureDetector(
-        onTap: () async {
-          if (!kIsWeb) {
-            if ("twitterFollowerCount" == key) {
-              pushToWebView(
-                  "https://www.youtube.com/channel/" + data['channelId'],
-                  data['name']);
-            } else {
-              pushToWebView(
-                  "https://www.youtube.com/channel/" + data['channelId'],
-                  data['name']);
-            }
-          } else {
-            if ("twitterFollowerCount" == key) {
-              if (await canLaunch(
-                  "https://www.youtube.com/channel/" + data['channelId'])) {
-                await launch(
-                    "https://www.youtube.com/channel/" + data['channelId']);
-              }
-            }
-          }
-        },
-        child: Container(
-          width: double.infinity,
-          height: 82.0,
-          margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Row(
-            children: [
-              Container(
-                width: 80.0,
-                height: 80.0,
-                margin: const EdgeInsets.only(left: 16.0),
-                child: ClipOval(
-                  child: data['channelThumbnail'] != null
-                      ? CachedNetworkImage(
-                          imageUrl: data['channelThumbnail'],
-                          width: double.infinity,
-                          height: double.infinity,
-                          fit: BoxFit.cover,
-                          errorWidget: (context, url, error) =>
-                              const Icon(Icons.error),
-                        )
-                      : Container(color: Colors.grey.shade300),
-                ),
+      margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Container(
+        width: double.infinity,
+        height: 82.0,
+        margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        child: Row(
+          children: [
+            Container(
+              width: 80.0,
+              height: 80.0,
+              margin: const EdgeInsets.only(left: 16.0),
+              child: ClipOval(
+                child: (data['channelThumbnail'] != null &&
+                        (data['channelThumbnail'] as String).trim().isNotEmpty)
+                    ? CachedNetworkImage(
+                        imageUrl: data['channelThumbnail'],
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                        errorWidget: (context, url, error) => Image.asset(
+                            'images/noImage200200.png',
+                            fit: BoxFit.cover),
+                      )
+                    : Image.asset('images/noImage200200.png',
+                        fit: BoxFit.cover),
               ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const SizedBox(height: 2.0),
-                    Text(
-                      data['name'],
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 14.0, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      data[key].toString(),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 26.0, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      data['office'],
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          const TextStyle(fontSize: 14.0, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 2.0),
-                  ],
-                ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const SizedBox(height: 2.0),
+                  Text(
+                    data['name'] ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 14.0, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    data[key]?.toString() ?? '',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 26.0, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    data['office'] ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14.0, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 2.0),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

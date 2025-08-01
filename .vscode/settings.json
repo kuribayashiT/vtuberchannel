@@ -1,4 +1,37 @@
 {
     "java.configuration.updateBuildConfiguration": "disabled",
-    "dart.flutterSdkPath": "~/flutter"
+    "dart.flutterSdkPath": "~/flutter",
+    "files.exclude": {
+        "**/build": true,
+        "**/.dart_tool": true,
+        "**/ios/Pods": true,
+        "**/macos/Pods": true,
+        "**/obj": true,
+        "**/oldfunctions": true,
+        "**/test": true,
+        "**/windows": true,
+        "**/macos": true
+    },
+    "search.exclude": {
+        "**/build": true,
+        "**/.dart_tool": true,
+        "**/ios/Pods": true,
+        "**/macos/Pods": true,
+        "**/obj": true,
+        "**/oldfunctions": true,
+        "**/test": true,
+        "**/windows": true,
+        "**/macos": true
+    },
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/.dart_tool/**": true,
+        "**/ios/Pods/**": true,
+        "**/macos/Pods/**": true,
+        "**/obj/**": true,
+        "**/oldfunctions/**": true,
+        "**/test/**": true,
+        "**/windows/**": true,
+        "**/macos/**": true
+    }
 }

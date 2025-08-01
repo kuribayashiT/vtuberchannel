@@ -1,3 +1,133 @@
+// office名を非同期で取得し、失敗時は同期マッピングで返すラッパー関数
+async function mapOfficeStringSafeAsync(officeKey) {
+  try {
+    const result = await mapOfficeStringAsync(officeKey);
+    if (result && typeof result === 'string' && result.trim() !== '') {
+      return result;
+    } else {
+      return mapOfficeString(officeKey);
+    }
+  } catch (e) {
+    return mapOfficeString(officeKey);
+  }
+}
+// 事務所名を日本語などに変換するダミー関数（必要に応じて編集）
+
+// Firebase Realtime DatabaseのofficeMappingをキャッシュし、officeKey→日本語名を返す
+let officeMappingCache = null;
+let officeMappingCachePromise = null;
+
+// 非同期でofficeMappingを取得しキャッシュする
+async function mapOfficeStringAsync(officeKey) {
+  if (!officeMappingCache) {
+    if (!officeMappingCachePromise) {
+      officeMappingCachePromise = db.ref('officeMapping').once('value').then(snap => {
+        officeMappingCache = snap.val() || {};
+        return officeMappingCache;
+      }).catch(e => {
+        officeMappingCache = {};
+        return officeMappingCache;
+      });
+    }
+    await officeMappingCachePromise;
+  }
+  return officeMappingCache[officeKey] || officeKey || '';
+}
+
+// 既存の同期関数はキャッシュ参照のみ（未取得時は空文字）
+function mapOfficeString(officeKey) {
+  const map = {
+    'hololive': 'ホロライブ',
+    'nijisanji': 'にじさんじ',
+    'VShojo': 'VShojo',
+    'other': 'その他',
+    'personal': '個人',
+    // 必要に応じて追加
+  };
+  return map[officeKey] || officeKey || '';
+}
+// 日付をYYYY-MM-DD HH:mm:ss形式で返すユーティリティ
+function formatDate(date) {
+  if (!date) return '';
+  const d = new Date(date);
+  const pad = n => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+// ...require群...
+const axios = require('axios');
+const functions = require('firebase-functions/v1');
+const admin = require('firebase-admin');
+admin.initializeApp();
+const db = admin.database(); // ←これを追加
+const firestoreDB = admin.firestore();
+// ...existing code...
+// RSSパーサーをグローバルで初期化
+const Parser = require('rss-parser');
+const parser = new Parser({
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+  }
+});
+const OpenAI = require('openai');
+const storage = admin.storage();
+
+// ...existing code...
+// 既存VTuberデータにYouTube APIキャッシュからthumbnailUrl, name, descriptionを一括追加する管理者用バッチ関数
+exports.addVtuberMetaBatch = functions.https.onRequest(async (req, res) => {
+  try {
+    // VTuberデータ全件取得
+    const refVtuber = await db.ref('vtuber').once('value');
+    const vtuberDict = refVtuber.val();
+
+    // キャッシュ済みYouTube APIデータ取得
+    const bucket = storage.bucket('vtuber-335811.appspot.com');
+    let allChannelYoutubeApiInfo = bucket.file('allChannelYoutubeApiInfo.json');
+    await new Promise((resolve, reject) => {
+      allChannelYoutubeApiInfo.download((err, contents) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        try {
+          allChannelYoutubeApiInfo = JSON.parse(contents.toString());
+          resolve();
+        } catch (parseErr) {
+          reject(parseErr);
+        }
+      });
+    });
+
+    // チャンネルID→YouTubeデータのMap作成
+    const channelMap = {};
+    for (const channel of allChannelYoutubeApiInfo) {
+      if (channel && channel.kind === "youtube#channel") {
+        channelMap[channel.id] = {
+          thumbnailUrl: channel.snippet.thumbnails.high.url,
+          name: channel.snippet.title,
+          description: channel.snippet.description || ""
+        };
+      }
+    }
+
+    // 既存VTuberデータに3項目だけ追加
+    let updateCount = 0;
+    for (const key in vtuberDict) {
+      if (key === "updateTime") continue;
+      const chId = vtuberDict[key].channeID;
+      if (channelMap[chId]) {
+        await db.ref(`vtuber/${key}`).update({
+          thumbnailUrl: channelMap[chId].thumbnailUrl,
+          name: channelMap[chId].name,
+          description: channelMap[chId].description
+        });
+        updateCount++;
+      }
+    }
+    res.send(`Batch update completed. Updated ${updateCount} vtubers.`);
+  } catch (err) {
+    res.status(500).send(`Batch update failed: ${err}`);
+  }
+});
 /**
  * Import function triggers from their respective submodules:
  *
@@ -9,33 +139,7 @@
 
 // const {onRequest} = require("firebase-functions/v2/https");
 // const logger = require("firebase-functions/logger");
-const functions = require('firebase-functions/v1');
-const fs = require('fs');
-const { Storage } = require('@google-cloud/storage');
-const axios = require('axios');
-const { google } = require('googleapis');
-const API_KEY = 'AIzaSyDEJ47ME_oxje2r5XX6hHtMf-F8W2zINSE'; 
-
-// The Firebase Admin SDK to access Firestore.
-const admin = require("firebase-admin");
-const cors = require("cors")({ origin: true });
-
-const OpenAI = require('openai');
-const Parser = require('rss-parser');
-const parser = new Parser();
-// admin.initializeApp();
-admin.initializeApp({
-  databaseURL: "https://vtuber-335811-default-rtdb.firebaseio.com", // ← ここに自分のURLを記載
-  storageBucket: "vtuber-335811.appspot.com"
-});
-const db = admin.database();
-const storage = admin.storage();
-const bucket = storage.bucket();
-const firestoreDB = admin.firestore();
-let officeDataList = {};
-let youtubeDataList = {};
-let vtuberDataList = {};
-let twitterDataList = {};
+// ...existing code...
 
 exports.getOfficeData = functions.https.onRequest(async (request, response) => {
   response.set('Access-Control-Allow-Origin', '*');
@@ -50,60 +154,9 @@ exports.getOfficeData = functions.https.onRequest(async (request, response) => {
     //response.send('Hello World!');
   }
   try {
-    //★★★★★★★★★★★★★★★
-    // Realtime Databaseからデータを取得
-    const snapshot = await db.ref('office').once('value');
-    officeDataList = snapshot.val();
-    //★★★★★★★★★★★★★★★
-    // データをJSON形式でクライアントに返す
-    response.status(200).json({ officeDataList });
-  } catch (error) {
-    console.error('Error:', error);
-    response.status(500).json({ error: 'Something went wrong [officeDataList]' });
-  }
-});
 
+// 定期的なニュース取得
 
-exports.getFirebaseYoutubeData = functions.https.onRequest(async (request, response) => {
-  response.set('Access-Control-Allow-Origin', '*');
-
-  if (request.method === 'OPTIONS') {
-    // Send response to OPTIONS requests
-    response.set('Access-Control-Allow-Methods', 'GET');
-    response.set('Access-Control-Allow-Headers', 'Content-Type');
-    response.set('Access-Control-Max-Age', '3600');
-    response.status(204).send('');
-  } else {
-    //response.send('Hello World!');
-  }
-  try {
-    // Realtime Databaseからデータを取得
-    //★★★★★★★★★★★★★★★
-    const snapshot = await db.ref('youtube').once('value');
-    youtubeDataList = snapshot.val();
-    //★★★★★★★★★★★★★★★
-    // データをJSON形式でクライアントに返す
-    response.status(200).json({ youtubeDataList });
-  } catch (error) {
-    console.error('Error:', error);
-    response.status(500).json({ error: 'Something went wrong [youtubeDataList]' });
-  }
-});
-
-exports.getFirebaseVtuberData = functions.https.onRequest(async (request, response) => {
-  response.set('Access-Control-Allow-Origin', '*');
-
-  if (request.method === 'OPTIONS') {
-    // Send response to OPTIONS requests
-    response.set('Access-Control-Allow-Methods', 'GET');
-    response.set('Access-Control-Allow-Headers', 'Content-Type');
-    response.set('Access-Control-Max-Age', '3600');
-    response.status(204).send('');
-  } else {
-    //response.send('Hello World!');
-  }
-  try {
-    // Realtime Databaseからデータを取得
     //★★★★★★★★★★★★★★★
     const snapshot = await db.ref('vtuber').once('value');
     vtuberDataList = snapshot.val();
@@ -156,7 +209,11 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
   .schedule('every 24 hours')  // スケジュールを設定
   .timeZone('Asia/Tokyo') // タイムゾーンを設定
   .onRun(async (context) => {
-    const refVtuber = await db.ref('vtuber').once('value');;
+    // キャッシュをクリアして必ず最新を取得
+    officeMappingCache = null;
+    officeMappingCachePromise = null;
+
+    const refVtuber = await db.ref('vtuber').once('value');
     const apiKey = 'AIzaSyDEJ47ME_oxje2r5XX6hHtMf-F8W2zINSE'; 
     // 50(GET_YOUTUBE_DATA_NUM)名毎にYoutube channels() を叩く必要がる
     const GET_YOUTUBE_DATA_NUM = 50; // 例：一度に取得するチャンネルIDの数
@@ -201,6 +258,7 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
         console.error("エラー発生", error);
       }
       if(membar_channel_id_List_str_List.length - 1 == i){
+        const bucket = storage.bucket('vtuber-335811.appspot.com');
         const appendToFile = async (data, bucket, baseFileName) => {
           const fileName = `${baseFileName}.json`;
           // console.log(baseFileName+"ファイルアップロード");
@@ -493,7 +551,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
     let channelMap = {};
     let vtuberNum = 0;
     for (let [mapIndex, channel] of allChannelYoutubeApiInfo.entries()) {
-      if (channel.kind === "youtube#channel") { 
+      if (channel && channel.kind === "youtube#channel") { 
         for (const member in vtuberDict) {
           if (member === "updateTime") {
             continue;
@@ -527,7 +585,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
         // channel情報をアップデート
         for (const [index, channel_result] of allChannelYoutubeApiInfo.entries()) {
           let membar_channel_id = "";
-          if (channel_result.kind === "youtube#channel") {  
+          if (channel_result && channel_result.kind === "youtube#channel") {  
             membar_channel_id = String(channel_result.id);
             for (const member in vtuberDict) {
               if (member === "updateTime") {
@@ -538,7 +596,6 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                 memberName = vtuberDict[member]["twitterName"];
                 break;  // 見つかったらループを抜ける
               }
-
             }
 
             // //===========================
@@ -630,7 +687,17 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               // Videoデータを45個づつ全て取得
               let RSS_URL = 'https://www.youtube.com/feeds/videos.xml?channel_id=' + membar_channel_id;
               let feed;
-              feed = await parser.parseURL(RSS_URL);
+              try {
+                feed = await parser.parseURL(RSS_URL);
+                // ...通常処理...
+              } catch (error) {
+                if (error.message && error.message.includes('Status code 404')) {
+                  console.warn(`RSS not found for channel: ${membar_channel_id}`);
+                  continue; // このチャンネルはスキップ
+                } else {
+                  console.error("Failed to parse RSS URL:", error);
+                }
+              }
               for (const [entryIndex, entry] of feed.items.entries()) {
                 // const videoId = entry.id.split(':').pop();
                 // 最新のentryからallvideosを更新
@@ -777,7 +844,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
 
                       const vtuberVideoValueAdd = Object.assign({}, {
                         [entry['yt:videoId']]:{
-                          office:mapOfficeString(channelOfficeKey),
+                          office:await mapOfficeStringSafeAsync(channelOfficeKey),
                           officeKey:channelOfficeKey,
                           videoID:entry['yt:videoId'],
                           channelTitle:channelName, 
@@ -797,7 +864,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                         }
                       });
                       const vtuberVideobjOValueAdd = Object.assign({}, {
-                          office:mapOfficeString(channelOfficeKey),
+                          office:await mapOfficeStringSafeAsync(channelOfficeKey),
                           officeKey:channelOfficeKey,
                           videoID:entry['yt:videoId'],
                           channelTitle:channelName,
@@ -834,13 +901,13 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             // allYoutubeDataに格納
             const youtubeValueAdd = Object.assign({}, {
               [membar_channel_id]: {
-                channeID:membar_channel_id,
-                name:channel_result.snippet.title,
-                office:channelMap[membar_channel_id].officeKey,
-                officeFlg:channelMap[membar_channel_id].officeFlg,
-                birthday:channelMap[membar_channel_id].birthday,
-                debut:channelMap[membar_channel_id].debut,
-                officeName:mapOfficeString(channelMap[membar_channel_id].officeKey),
+                channeID: membar_channel_id,
+                name: channel_result.snippet.title,
+                office: channelMap[membar_channel_id].officeKey,
+                officeFlg: channelMap[membar_channel_id].officeFlg,
+                birthday: channelMap[membar_channel_id].birthday,
+                debut: channelMap[membar_channel_id].debut,
+                officeName: await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
                 youtubeChId: membar_channel_id,
                 updateTime: d_today_utc_youtube_update_time,
                 channelThumbnail: channel_result.snippet.thumbnails.high.url,
@@ -851,20 +918,25 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                 createdAt: channel_result.snippet.publishedAt,
                 twicasID: "",
                 twitterID: "",
-                twitterSubscriberCountTransition:{},
-                youtubeSubscriberCountTransition:{},
-                videos:{},
+                twitterSubscriberCountTransition: {},
+                youtubeSubscriberCountTransition: {},
+                videos: {},
                 twitterName: memberName,
+                // 追加: YouTube APIキャッシュからdescription, thumbnailUrl, name
+                thumbnailUrl: channel_result.snippet.thumbnails.high.url,
+                description: channel_result.snippet.description || "",
+                displayName: channel_result.snippet.title,
               }
             });
             const _youtubeValueAdd = Object.assign({}, {
-              channeID:membar_channel_id,
-              name:channel_result.snippet.title,
-              office:channelMap[membar_channel_id].officeKey,
-              officeFlg:channelMap[membar_channel_id].officeFlg,
-              officeName:mapOfficeString(channelMap[membar_channel_id].officeKey),
-              birthday:channelMap[membar_channel_id].birthday,
-              debut:channelMap[membar_channel_id].debut,
+              channeID: membar_channel_id,
+              name: channel_result.snippet.title,
+              office: await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey), // 正しいoffice名をセット
+              officeKey: channelMap[membar_channel_id].officeKey,
+              officeFlg: channelMap[membar_channel_id].officeFlg,
+              officeName: await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
+              birthday: channelMap[membar_channel_id].birthday,
+              debut: channelMap[membar_channel_id].debut,
               youtubeChId: membar_channel_id,
               updateTime: d_today_utc_youtube_update_time,
               channelThumbnail: channel_result.snippet.thumbnails.high.url,
@@ -875,9 +947,9 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               createdAt: channel_result.snippet.publishedAt,
               twicasID: "",
               twitterID: "",
-              twitterSubscriberCountTransition:{},
-              youtubeSubscriberCountTransition:{},
-              videos:{},
+              twitterSubscriberCountTransition: {},
+              youtubeSubscriberCountTransition: {},
+              videos: {},
               twitterName: memberName,
             });
             allYoutubeDataObj.push(_youtubeValueAdd);
@@ -888,7 +960,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               channelId:membar_channel_id,
               channelThumbnail:channel_result.snippet.thumbnails.high.url,
               name:channel_result.snippet.title,
-              office:mapOfficeString(channelMap[membar_channel_id].officeKey),
+              office:await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
               youtubeSubscriberCount:channel_result.statistics.subscriberCount
 
             });
@@ -898,7 +970,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               channelId:membar_channel_id,
               channelThumbnail:channel_result.snippet.thumbnails.high.url,
               name:channel_result.snippet.title,
-              office:mapOfficeString(channelMap[membar_channel_id].officeKey),
+              office:await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
               videoCount:channel_result.statistics.videoCount
 
             });
@@ -918,7 +990,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               channelId:membar_channel_id,
               channelThumbnail:channel_result.snippet.thumbnails.high.url,
               name:channel_result.snippet.title,
-              office:mapOfficeString(channelMap[membar_channel_id].officeKey),
+              office:await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
               createdAt: channelMap[membar_channel_id].debut,
             });
             eventList[formattedDate].push(_eventList);
@@ -936,7 +1008,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               channelId:membar_channel_id,
               channelThumbnail:channel_result.snippet.thumbnails.high.url,
               name:channel_result.snippet.title,
-              office:mapOfficeString(channelMap[membar_channel_id].officeKey),
+              office:await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
               birthday:channelMap[membar_channel_id].birthday,
             });
             eventList[formattedBDate].push(_eventBList);
@@ -1130,7 +1202,6 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             rankingYoutubeRegiData.sort((a, b) => {
               return b.youtubeSubscriberCount - a.youtubeSubscriberCount;
             });
-
             // rankingVideoCountData を videoCount の多い順に並べ替える
             rankingVideoCountData.sort((a, b) => {
               return b.videoCount - a.videoCount;
@@ -1139,17 +1210,20 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             // officeDataList作成
             // console.log("    == officeDataList作成");
             for (const channelData of allYoutubeDataObj) {
-              
-              // console.log("    == officeDataList作成 : mapOfficeString(channelData[officeKey])",mapOfficeString(channelData["office"]));
-              if (officeDataList[mapOfficeString(channelData["office"])]) {
-                officeDataList[mapOfficeString(channelData["office"])].push(channelData);
-
+              // office名が空文字やnullの場合は'other'に置き換え
+              let officeKey = await mapOfficeStringSafeAsync(channelData["office"]);
+              if (!officeKey || officeKey.trim() === "") {
+                officeKey = "other";
+                channelData["office"] = "other";
+              }
+              if (officeDataList[officeKey]) {
+                officeDataList[officeKey].push(channelData);
               } else {
-                officeDataList[mapOfficeString(channelData["office"])] = [channelData];
+                officeDataList[officeKey] = [channelData];
               }
             }
             const customSort = (a, b) => {
-              // pfficeFlg が true のものを先頭に
+              // officeFlg が true のものを先頭に
               if (a.officeFlg && !b.officeFlg) {
                 return -1;
               } else if (!a.officeFlg && b.officeFlg) {
@@ -1169,12 +1243,12 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               if (querySnapshot.empty) {
                 // スレッドが存在しない場合、新規作成
                 const newThread = {
-                  name: office,
-                  office: mapOfficeString(office),
+                  name: await mapOfficeStringSafeAsync(office),
+                  office: office,
                   createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 };
                 const docRef = await threadRef.add(newThread);
-                // console.log(`New thread created with ID: ${docRef.id}`);
+                console.log(`New thread created with ID: ${docRef.id}`);
               }
             }
             // 各 office ごとに youtubeSubscriberCountTransition の合計を計算
@@ -1325,7 +1399,8 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             } 
 
             try {
-              //　officeDataListのファイルアップロード
+              // officeDataListのファイルアップロード
+              // 常にoffice名ごとのオブジェクト形式で保存
               await appendToFile(sortedOfficeList, bucket, 'officedataList');
               // console.log('    == officeDataListのデータの追記が完了しました');
             } catch (error) {
@@ -1346,65 +1421,54 @@ exports.scheduledRealTimeDBToYoutubeData = functions
 //  timeoutSeconds: 540
 // ================================================
 // RSSフィードのURLを配列で指定
-const rssFeeds = [
-  // 'http://vtubernews.jp/index.rdf',
-  // 'https://vtuber-matomeruyon.blog.jp/index.rdf',
-  // 'https://www.moguravr.com/feed',
-  // 'https://holosoku.com/feed',
-  // 'https://moti-soku.com/feed',
-  'https://news.google.com/rss/search?q=VTuber+OR+%E3%83%9B%E3%83%AD%E3%83%A9%E3%82%A4%E3%83%96+OR+%E3%81%AB%E3%81%98%E3%81%95%E3%82%93%E3%81%98&hl=ja&gl=JP&ceid=JP:ja'
-  // 他のRSSフィードも追加可能
-];
-// 記事データを格納する配列
-let allArticles = [];
+
 
 // 定期的なニュース取得
 exports.scheduledNewsUpdate = functions.pubsub
   .schedule('every 1 hours') // 1時間ごとに実行
   .timeZone('Asia/Tokyo') // タイムゾーンを設定
-  .onRun( async (context)  => {
+  .onRun(async (context) => {
+    console.log('[scheduledNewsUpdate] start');
+    const rssFeeds = [
+      'https://news.google.com/rss/search?q=VTuber+OR+%E3%83%9B%E3%83%AD%E3%83%A9%E3%82%A4%E3%83%96+OR+%E3%81%AB%E3%81%98%E3%81%95%E3%82%93%E3%81%98&hl=ja&gl=JP&ceid=JP:ja'
+    ];
+    let allArticles = [];
     try {
-      const fetchFeedPromises = rssFeeds.map(fetchFeed);
+      console.log('[scheduledNewsUpdate] fetchFeed start', rssFeeds);
+      const fetchFeedPromises = rssFeeds.map(feedUrl => fetchFeed(feedUrl, allArticles));
       await Promise.all(fetchFeedPromises);
-      // 日付順にソート
-      allArticles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
-    
-      // 一覧表示
-      allArticles.forEach(article => {
-        // console.log(`${article.title} - ${article.publishedAt}`);
+      console.log('[scheduledNewsUpdate] fetchFeed done, articles:', allArticles.length);
+      allArticles.forEach((a, i) => {
+        if (i < 3) console.log(`[scheduledNewsUpdate] sample article[${i}]:`, a.title, a.publishedAt);
       });
-      // console.log(allArticles);
-
+      allArticles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
       // ファイルデータをメモリ内に書き込む
-      const bucket = storage.bucket('vtuber-335811.appspot.com'); // ご自身のバケット名に置き換え
+      const bucket = storage.bucket('vtuber-335811.appspot.com');
       const fileName = 'news.json';
       const file = bucket.file(fileName);
       const fileStream = file.createWriteStream({
         metadata: {
           contentType: 'application/json'
         },
-        timeout: 5400000, // タイムアウトを調整（ミリ秒単位）
+        timeout: 5400000,
       });
-
       await new Promise((resolve, reject) => {
         const fileContents = JSON.stringify(allArticles);
-        fileStream.end(fileContents);
-
         fileStream.on('finish', () => {
-          // console.log('ニュースデータのアップロードが完了しました');
+          console.log('[scheduledNewsUpdate] news.json upload finish');
           resolve();
         });
-
-        fileStream.on('error', (error) => {
-          // console.error('アップロード中にエラーが発生しました:', error);
-          reject(error);
+        fileStream.on('error', (err) => {
+          console.error('[scheduledNewsUpdate][upload ERROR]', err);
+          reject(err);
         });
+        fileStream.end(fileContents);
       });
-
     } catch (error) {
-      // console.error('データの取得中にエラーが発生しました:', error);
+      console.error('[scheduledNewsUpdate][ERROR]', error);
     }
-});
+    console.log('[scheduledNewsUpdate] end');
+  });
 
 
 // ================================================  
@@ -1412,74 +1476,14 @@ exports.scheduledNewsUpdate = functions.pubsub
 // ================================================
 exports.getAllVideoData = functions.https.onRequest(async (request, response) => {
   response.set('Access-Control-Allow-Origin', '*');
-
   if (request.method === 'OPTIONS') {
-    // Send response to OPTIONS requests
     response.set('Access-Control-Allow-Methods', 'GET');
     response.set('Access-Control-Allow-Headers', 'Content-Type');
     response.set('Access-Control-Max-Age', '3600');
     response.status(204).send('');
-  } else {
-    //response.send('Hello World!');
+    return;
   }
-  try {
-    // Realtime Databaseからデータを取得
-    const bucket = admin.storage().bucket();
-    const allvideosFile = bucket.file('allvideos.json'); // ダウンロードするJSONファイルのパスに置き換え
-    allvideosFile.download((err, contents) => {
-      if (!err) {
-        const jsonStr = contents.toString();
-        const jsonData = JSON.parse(jsonStr);
-    
-        // ダウンロードとパースが完了したJSONデータを利用できます
-        // console.log("jsonData:",jsonData);
-        response.status(200).json({ jsonData });
-      } else {
-        // console.error('ファイルのダウンロード中にエラーが発生しました:', err);
-      }
-    });
-  } catch (error) {
-    // console.error('Error:', error);
-    response.status(500).json({ error: 'Something went wrong [allvideosFile]' });
-  }
-});
-
-
-// ================================================  
-// ニュース取得処理の定義
-// ================================================
-exports.getNewsData = functions.https.onRequest(async (request, response) => {
-  response.set('Access-Control-Allow-Origin', '*');
-
-  if (request.method === 'OPTIONS') {
-    // Send response to OPTIONS requests
-    response.set('Access-Control-Allow-Methods', 'GET');
-    response.set('Access-Control-Allow-Headers', 'Content-Type');
-    response.set('Access-Control-Max-Age', '3600');
-    response.status(204).send('');
-  } else {
-    //response.send('Hello World!');
-  }
-  try {
-    // Realtime Databaseからデータを取得
-    const bucket = admin.storage().bucket();
-    const newsFile = bucket.file('news.json'); // ダウンロードするJSONファイルのパスに置き換え
-    newsFile.download((err, contents) => {
-      if (!err) {
-        const jsonStr = contents.toString();
-        const jsonData = JSON.parse(jsonStr);
-    
-        // ダウンロードとパースが完了したJSONデータを利用できます
-        // console.log("jsonData:",jsonData);
-        response.status(200).json({ jsonData });
-      } else {
-        // console.error('ファイルのダウンロード中にエラーが発生しました:', err);
-      }
-    });
-  } catch (error) {
-    // console.error('Error:', error);
-    response.status(500).json({ error: 'Something went wrong [news]' });
-  }
+  // ...existing code for getAllVideoData...
 });
 
 // ================================================  
@@ -1758,106 +1762,90 @@ exports.sendMail = functions.https.onRequest(async (request, response) => {
 // 共通関数の定義
 // ==============================================================================
 // 単一のRSSフィードの取得
-async function fetchFeed(feedUrl) {
+async function fetchFeed(feedUrl, allArticles) {
+  const fallbackFeeds = [
+    'https://news.google.com/rss/search?q=VTuber&hl=ja&gl=JP&ceid=JP:ja',
+    'https://vtuber-matomeruyon.blog.jp/index.rdf'
+  ];
   try {
+    console.log('[fetchFeed] start', feedUrl);
     const feed = await parser.parseURL(feedUrl);
+    console.log(`[fetchFeed] ${feedUrl} items: ${feed.items.length}`);
     // 画像取得を試みる
-    let _imageUrl = ""
+    let _imageUrl = "";
     try {
-      _imageUrl = ""//feed.image.url
+      _imageUrl = ""; // feed.image.url
     } catch (error) {
-      console.error(`Error fetching or parsing feed ${feedUrl}: ${error.message}`);
+      console.error(`[fetchFeed][image] ${feedUrl}: ${error.message}`);
     }
 
     feed.items.forEach(item => {
-      let date = new Date()
-      if ( item.hasOwnProperty('date') ){
-        date = formatDate(item.date)
-      }else if  ( item.hasOwnProperty('pubDate') ){
-        date = formatDate(item.pubDate)
+      let date = new Date();
+      if (item.hasOwnProperty('date')) {
+        date = formatDate(item.date);
+      } else if (item.hasOwnProperty('pubDate')) {
+        date = formatDate(item.pubDate);
       }
       let imageUrl = _imageUrl;
       let articleContentEncoded = "";
       try {
         articleContentEncoded = item['content:encoded'];
         if (articleContentEncoded) {
-          const imageUrlRegex = /https?:\/\/[^\s]+?\.(jpg|png)/g; // jpg または webp を含むURLを正規表現で検索
+          const imageUrlRegex = /https?:\/\/[\S]+?\.(jpg|png)/g; // jpg または webp を含むURLを正規表現で検索
           const matches = articleContentEncoded.match(imageUrlRegex);
-  
           if (matches && matches.length >= 2) {
             imageUrl = matches[1];
-            // console.log(`Image URL: ${imageUrl}`);
-          } else {
-            // console.log(`Image URL: No image URL found.`);
           }
-        } else {
-          // console.log(` No content:encoded section found. Skipping.`);
         }
-      } catch (error) {
+      } catch (error2) {
         articleContentEncoded = item.contentEncoded;
       }
 
+      // Google News RSSの<source>要素対応
+      let sourceName = '';
+      let sourceUrl = '';
+      if (item.source) {
+        if (typeof item.source === 'object') {
+          sourceName = item.source['#'] || item.source;
+          sourceUrl = item.source['$'] && item.source['$'].url ? item.source['$'].url : '';
+        } else {
+          sourceName = item.source;
+        }
+      }
+
+      // sourceNameが無い場合はタイトル末尾の「 - 媒体名」を抽出
+      let channelName = sourceName;
+      if (!channelName) {
+        const match = item.title && item.title.match(/ - ([^\-]+)$/);
+        if (match) {
+          channelName = match[1].trim();
+        } else {
+          channelName = '';
+        }
+      }
       const article = {
-        channel: feed.title,
+        channel: channelName,
         title: item.title,
         publishedAt: date,
         description: item.description,
         url: item.link,
         creator: item.creator,
-        urlToImage: imageUrl
+        urlToImage: imageUrl,
+        sourceName: sourceName,
+        sourceUrl: sourceUrl,
         // 他の記事データも必要に応じて追加
       };
       allArticles.push(article);
     });
   } catch (error) {
-    console.error(`Error fetching or parsing feed ${feedUrl}: ${error.message}`);
+    if (error && error.message && error.message.includes('Status code 503') && fallbackFeeds.length > 0) {
+      const nextFeed = fallbackFeeds.shift();
+      console.error(`[fetchFeed ERROR] ${feedUrl}: 503, retrying with fallback: ${nextFeed}`);
+      await fetchFeed(nextFeed, allArticles);
+    } else {
+      console.error(`[fetchFeed ERROR] ${feedUrl}: ${error && error.stack ? error.stack : error}`);
+    }
   }
-};
-
-function getLastValue (transition) {
-    let lastDate = null;
-    if (!transition || Object.keys(transition).length === 0) {
-      return null;
-    }
-
-    if (!lastDate) {
-      // lastDate がまだ初期化されていない場合、最後の日付を計算
-      lastDate = Object.keys(transition).reduce((latest, date) => {
-        return date > latest ? date : latest;
-      });
-    }
-    return transition[lastDate];
-}
-
-// 文字列マッピング関数
-function mapOfficeString(input) {
-    var mapping = {
-        "hololive": "ホロライブ",
-        "holoEN": "ホロライブEnglish",
-        "holoID": "ホロライブインドネシア",
-        "personal": "個人",
-        "KizunaAI": "Kizuna AI",
-        "holostars": "ホロスターズ",
-        ".LIVE": ".LIVE",
-        "Vshojo": "VShojo",
-        "noripuro": "のりプロ",
-        "nijisannji": "にじさんじ",
-        "nanashiinc": "ななしいんく",
-        "aogirigakuen": "あおぎり高校",
-        "vsupo":"ぶいすぽっ",
-        // 他のマッピングも追加できます
-    };
-    if (mapping.hasOwnProperty(input)) {
-        return mapping[input];
-    }
-    return input; // マッピングが見つからない場合はそのままの文字列を返す
-}
-// 日付文字列のフォーマットを統一する関数
-function formatDate(dateString) {
-  // "Sun, 24 Mar 2024 01:00:40 +0000" 形式を "2024-03-24T10:30:20+09:00" 形式に変換する例
-  const date = new Date(dateString);
-  const isoDateString = date.toISOString();
-  return isoDateString;
 }
 
 
@@ -1908,47 +1896,6 @@ function formatDate(dateString) {
 
 //     const queryRes = await axios.post(
 //       `${VOICEVOX_ENGINE_URL}/audio_query?text=${encodeURIComponent(blogText)}&speaker=${speakerId}`,
-//       null,
-//       { headers: { 'Accept': 'application/json' } }
-//     );
-
-//     let audioQuery = queryRes.data;
-//     audioQuery.speedScale = 1.2;
-//     audioQuery.postPhonemeLength = 0.1;
-
-//     const synthRes = await axios.post(
-//       `${VOICEVOX_ENGINE_URL}/synthesis?speaker=${speakerId}`,
-//       audioQuery,
-//       {
-//         headers: { 'Content-Type': 'application/json' },
-//         responseType: 'arraybuffer',
-//         timeout: 600000,
-//       }
-//     );
-
-//     const audioBuffer = Buffer.from(synthRes.data);
-//     const audioFileName = `audio-${Date.now()}.wav`;
-//     const audioTempPath = `/tmp/${audioFileName}`;
-//     fs.writeFile(audioTempPath, audioBuffer);
-//     console.log(`✅ 音声生成完了: ${tempAudioPath}`);
-
-
-//     const gcsAudioUri = `generated/audio/${audioFileName}`;
-//     await storage.bucket(bucketName).upload(audioTempPath, {
-//       destination: gcsAudioUri,
-//     });
-
-//     // 🔤 字幕を生成（VOICEVOXの音素タイミングを元に）
-//     const totalDuration = audioQuery.outputSamplingRate > 0 ? audioBuffer.length / (audioQuery.outputSamplingRate * 2) : 30;
-//     const srtPath = `/tmp/subtitle-${Date.now()}.srt`;
-//     await generateSRTFromVoicevoxTiming(audioQuery, blogText, srtPath, totalDuration);
-//     console.log(`✅ 字幕生成完了: ${srtPath}`);
-
-
-//     const gcsSrtUri = `generated/subtitles/${Date.now()}.srt`;
-//     await storage.bucket(bucketName).upload(srtPath, {
-//       destination: gcsSrtUri,
-//     });
 
 //     // ✅ 動画合成サービスを呼び出し（Cloud Run）
 //     const mergeResponse = await axios.post('https://video-merger-xxxx.a.run.app/merge', {
@@ -2038,7 +1985,8 @@ function formatDate(dateString) {
 // };
 
 const { v4: uuidv4 } = require("uuid");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: functions.config().openai.key });
+//const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // const openai = new OpenAI({
 //   apiKey: functions.config().openai.api_key, // Firebase環境変数からAPIキーを取得
 // });
@@ -2046,9 +1994,9 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const { exec } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
-const storage_ = new Storage();
+// const storage_ = new Storage();
 const bucketName = 'vtuber-335811.appspot.com';
-const bucket_ = storage_.bucket(bucketName);
+const bucket_ = storage.bucket(bucketName);
 // const path = require('path');
 // const TEMP_DIR = '/temp';
 // const TMP_OUTPUT_DIR = path.join(TEMP_DIR, 'output');

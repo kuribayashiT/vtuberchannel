@@ -6,6 +6,7 @@ import 'package:vtuberchannel/sideMenu.dart';
 import '../googleCloudFunctions.dart';
 import 'videoDistribution.dart';
 import '../common.dart';
+import '../widgets/cute_loading_widget.dart';
 
 bool showTomorrowFirstView = true;
 
@@ -189,13 +190,18 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
             future: dataForTomorrowday,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return const CuteLoadingWidget(
+                    message: '配信予定を読み込み中…', color: Color(0xFF2563EB));
               } else if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
+                return Center(child: Text('Error: ${snapshot.error}'));
               } else {
-                List dataForTomorrowday = snapshot.data!;
-                if (dataForTomorrowday.isEmpty) {
-                  return const Center(child: Text('配信予定の動画はありません'));
+                List dataForTomorrow = snapshot.data!;
+                if (dataForTomorrow.isEmpty) {
+                  return CuteEmptyWidget(
+                      message: '配信予定の動画はありません',
+                      icon: const Icon(Icons.live_tv,
+                          size: 56, color: Color(0xFF2563EB)),
+                      color: const Color(0xFF2563EB));
                 } else {
                   if (row > 1) {
                     return GridView.builder(
@@ -206,23 +212,23 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
                         mainAxisSpacing: 8.0, // 行間のスペース
                         //childAspectRatio: 3 / 4, // 要素のアスペクト比
                       ),
-                      itemCount: dataForTomorrowday.length,
+                      itemCount: dataForTomorrow.length,
                       itemBuilder: (context, index) {
                         // Web用のレイアウトを構築する
                         return SizedBox(
                             child: videoWidget(
-                                dataForTomorrowday[index], now, height));
+                                dataForTomorrow[index], now, height));
                       },
                     );
                   } else {
                     return ListView.builder(
-                      itemCount: dataForTomorrowday.length,
+                      itemCount: dataForTomorrow.length,
                       physics: const FasterScrollPhysics(),
                       itemBuilder: (context, index) {
                         return Column(children: [
                           SizedBox(
                               child: videoWidget(
-                                  dataForTomorrowday[index], now, height)),
+                                  dataForTomorrow[index], now, height)),
                           if (!kIsWeb)
                             if (index % YoutubeNativeADInterval == 0)
                               Align(
@@ -256,30 +262,37 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
             future: dataForSeparateTomorrowday,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return const CuteLoadingWidget(
+                    message: '配信予定を読み込み中…', color: Color(0xFF2563EB));
               } else if (snapshot.hasError) {
                 return Center(child: Text('Error: ${snapshot.error}'));
               } else {
                 List dataForHours = snapshot.data!;
 
                 return TabBarView(
-                  physics: kIsWeb ? const NeverScrollableScrollPhysics() : null, // Webの時だけスクロール禁止
+                  physics: kIsWeb
+                      ? const NeverScrollableScrollPhysics()
+                      : null, // Webの時だけスクロール禁止
                   children: List.generate(24, (hourIndex) {
                     List<dynamic> dataForHour = dataForHours[hourIndex];
                     if (dataForHour.isEmpty) {
                       return Column(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            const Center(child: Text("この時間の配信予定はまだありません。")),
+                            CuteEmptyWidget(
+                                message: 'この時間の配信予定はまだありません',
+                                icon: const Icon(Icons.access_time,
+                                    size: 56, color: Color(0xFF2563EB)),
+                                color: const Color(0xFF2563EB)),
                             // if (adHelper.nativeAds.isNotEmpty)
-                              Align(
-                                alignment: Alignment.topCenter,
-                                child: SizedBox(
-                                  width: screenWidth,
-                                  height: height,
-                                  child: adHelper.buildNextNativeAdWidget(),
-                                ),
+                            Align(
+                              alignment: Alignment.topCenter,
+                              child: SizedBox(
+                                width: screenWidth,
+                                height: height,
+                                child: adHelper.buildNextNativeAdWidget(),
                               ),
+                            ),
                           ]);
                     } else {
                       if (row > 1) {
@@ -413,7 +426,9 @@ class CustomAppBar extends StatelessWidget {
           String label = '${index.toString().padLeft(2, '0')}:00';
           return Tab(text: label);
         }),
-        labelPadding: kIsWeb && MediaQuery.of(context).size.width > 1000 ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 8.0),
+        labelPadding: kIsWeb && MediaQuery.of(context).size.width > 1000
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(horizontal: 8.0),
       ),
     );
   }

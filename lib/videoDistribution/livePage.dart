@@ -1,6 +1,7 @@
 // ignore: file_names
 import 'package:flutter/material.dart';
 import 'package:vtuberchannel/sideMenu.dart';
+import '../widgets/cute_loading_widget.dart';
 import '../googleCloudFunctions.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../common.dart';
@@ -33,7 +34,6 @@ class _LivePage extends State<LivePage> {
     myFavorteState.addListener(_onDataUpdated); // リスナーを登録
     _isMounted = true;
     _liveData = getLiveData();
-
   }
 
   @override
@@ -75,7 +75,7 @@ class _LivePage extends State<LivePage> {
       setState(() {
         _liveData = getLiveData(); // データを再取得
       });
-    }else{
+    } else {
       setState(() {
         _liveData = getLiveData(); // データを再取得
       });
@@ -114,7 +114,10 @@ class _LivePage extends State<LivePage> {
           future: _liveData,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return const CuteLoadingWidget(
+                message: '配信中の動画を読み込み中…',
+                color: Color(0xFF2563EB), // Playタブ青系
+              );
             } else if (snapshot.hasError) {
               return Center(child: Text('Error: ${snapshot.error}'));
             } else {
@@ -122,16 +125,14 @@ class _LivePage extends State<LivePage> {
               if (data.isEmpty) {
                 // 空のリストでもPullToRefreshが動作するようにする
                 return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(), // PullToRefreshが可能
-                  children: const [
-                    Center( // 縦横中央に配置
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 60.0),
-                        child: Text(
-                          '配信中の動画はありません',
-                          style: TextStyle(fontSize: 16), // 必要に応じてスタイルを設定
-                        ),
-                      ),
+                  physics:
+                      const AlwaysScrollableScrollPhysics(), // PullToRefreshが可能
+                  children: [
+                    CuteEmptyWidget(
+                      message: '配信中の動画はありません',
+                      icon: Icon(Icons.live_tv,
+                          size: 56, color: Color(0xFF2563EB)),
+                      color: Color(0xFF2563EB),
                     ),
                   ],
                 );
@@ -169,7 +170,6 @@ class _LivePage extends State<LivePage> {
         ),
       ),
     );
-
   }
 
   Widget buildSquareLayout(Map<String, dynamic> data, double height) {

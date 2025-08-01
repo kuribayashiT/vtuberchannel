@@ -150,9 +150,20 @@
                             <div id="singleTwitterStatus" class="status-message"></div>
                         </div>
                         <div class="form-group">
+                            <label>事務所所属フラグ (officeFlg) <span style="color: #e57373; font-weight: bold;">*</span></label>
+                            <div style="display: flex; gap: 18px; align-items: center; margin-top: 4px;">
+                                <label style="background: #e3f2fd; border-radius: 16px; padding: 6px 18px; font-weight: 600; box-shadow: 0 1px 4px #b3e5fc55; cursor: pointer;">
+                                    <input type="radio" name="officeFlg" id="officeFlg-true" value="true" required style="accent-color: #2196f3; margin-right: 6px;"> 事務所（True）
+                                </label>
+                                <label style="background: #fff0f6; border-radius: 16px; padding: 6px 18px; font-weight: 600; box-shadow: 0 1px 4px #ffb6b955; cursor: pointer;">
+                                    <input type="radio" name="officeFlg" id="officeFlg-false" value="false" required style="accent-color: #e57373; margin-right: 6px;"> メンバー（False）
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-group">
                             <label for="birthday">Birthday <span style="color: #e57373; font-weight: bold;">*</span></label>
-                            <input type="date" id="birthday" required style="border: 2px solid #ffb6b9; border-radius: 8px; padding: 10px; font-size: 15px; background: #fff0f6;">
-                            <small style="color: #e57373;">例: 2000-01-01</small>
+                            <input type="text" id="birthday" required pattern="^(\d{2}(-|/)\d{2}|-)$" placeholder="MM-DD または -" style="border: 2px solid #ffb6b9; border-radius: 8px; padding: 10px; font-size: 15px; background: #fff0f6;">
+                            <small style="color: #e57373;">例: 10/05 または 10-05 または「-」</small>
                         </div>
                         <div class="form-buttons">
                             <button type="button" onclick="resetForm()" class="btn-secondary">Reset</button>
@@ -186,6 +197,42 @@
                         <div id="bulk-entries">
                             <!-- 動的に生成される一括登録エントリ -->
                         </div>
+                        <template id="bulk-entry-template">
+                            <form class="vtuber-entry vtuber-form vtuber-entry-row" autocomplete="off" onsubmit="return false;" style="display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; background: #fff8fa; border-radius: 8px; border: 1px solid #ffe3e3; padding: 8px; min-width: 0;">
+                                <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+                                    <div class="status-indicator status-no" style="width: 32px; text-align: center; font-weight: bold; font-size: 16px;" data-no="">No</div>
+                                    <div class="form-group" style="flex: 1 1 120px; min-width: 80px; display: flex; align-items: center;">
+                                        <input type="text" required placeholder="名前*" data-field="name" style="width: 100%; min-width: 60px; padding: 8px; font-size: 15px; height: 36px; border-radius: 8px; border: 1.5px solid #ffd6e0; background: #fff;">
+                                    </div>
+                                    <div class="form-group" style="flex: 1 1 180px; min-width: 100px; display: flex; align-items: center;">
+                                        <input type="text" required placeholder="チャンネルID/@Handle*" data-field="channel" style="width: 100%; min-width: 80px; padding: 8px; font-size: 15px; height: 36px; border-radius: 8px; border: 1.5px solid #ffd6e0; background: #fff;">
+                                    </div>
+                                    <div class="form-group" style="flex: 1 1 120px; min-width: 60px; display: flex; align-items: center;">
+                                        <input type="text" placeholder="TwitterID" data-field="twitter" style="width: 100%; min-width: 40px; padding: 8px; font-size: 15px; height: 36px; border-radius: 8px; border: 1.5px solid #ffd6e0; background: #fff;">
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 2px;">
+                                    <div style="width: 32px;"></div>
+                                    <div class="form-group" style="flex: 1 1 120px; min-width: 80px; display: flex; flex-direction: column; justify-content: center;">
+                                        <input type="text" required data-field="birthday" pattern="^(\d{2}(-|/)\d{2}|-)$" placeholder="MM-DD または -" style="width: 100%; min-width: 60px; border: 2px solid #ffb6b9; border-radius: 8px; padding: 8px; font-size: 15px; background: #fff0f6; height: 36px;">
+                                        <small style="color: #e57373;">例: 10/05 または 10-05 または「-」</small>
+                                    </div>
+                                    <div class="form-group" style="flex: 1 1 100px; min-width: 80px; display: flex; align-items: center;">
+                                        <div style="display: flex; gap: 10px; align-items: center; justify-content: center; width: 100%;">
+                                            <label style="background: #e3f2fd; border-radius: 12px; padding: 5px 12px; font-size: 13px; font-weight: 600; box-shadow: 0 1px 4px #b3e5fc55; cursor: pointer;">
+                                                <input type="radio" name="officeFlg" value="true" required style="accent-color: #2196f3; margin-right: 4px;"> 事務所（True）
+                                            </label>
+                                            <label style="background: #fff0f6; border-radius: 12px; padding: 5px 12px; font-size: 13px; font-weight: 600; box-shadow: 0 1px 4px #ffb6b955; cursor: pointer;">
+                                                <input type="radio" name="officeFlg" value="false" required style="accent-color: #e57373; margin-right: 4px;"> メンバー（False）
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="form-buttons" style="flex: 0 0 60px; display: flex; align-items: center;">
+                                        <button type="button" class="btn-remove btn-secondary" style="padding: 5px 12px; font-size: 14px; height: 36px;">削除</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </template>
                     </div>
                 </div>
                 <div id="officeVtuberList" class="vtuber-list" style="display: none;">
@@ -320,7 +367,7 @@
                                style="flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;"
                                oninput="searchVtubers()" onkeyup="searchVtubers()">
                         <select id="office-filter-select" style="min-width: 160px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;" onchange="searchVtubers()"></select>
-                        <button onclick="searchVtubers(true)" class="btn-primary">検索</button>
+                        <button onclick="searchVtubers()" class="btn-primary">検索</button>
                         <button onclick="resetVtuberSearch()" class="btn-secondary">リセット</button>
                     </div>
                 </div>

@@ -1,3 +1,31 @@
+// 選択中の事務所名を取得
+function getSelectedOffice() {
+    const selectedPanel = document.querySelector('.office-panel-cute.selected');
+    console.log('[getSelectedOffice] selectedPanel:', selectedPanel);
+
+    if (!selectedPanel) return '';
+    let office = selectedPanel.getAttribute('data-office');
+    if (!office) return '';
+    if (office === 'other') {
+        const customOffice = document.getElementById('customOffice');
+        if (customOffice && typeof customOffice.value === 'string' && customOffice.value.trim()) {
+            return customOffice.value.trim();
+        }
+        // customOfficeがnull/undefined/空の場合は空文字を返す
+        return '';
+    }
+    return office || '';
+}
+// シンプルな進捗表示用ダミー関数（未定義エラー対策）
+function showProgress(show, percent) {
+    // 必要に応じて進捗バーやローディングUIを実装
+    // ここではコンソール出力のみ
+    if (show) {
+        console.log('進捗:', percent ? percent + '%' : '表示');
+    } else {
+        console.log('進捗: 非表示');
+    }
+}
 // Firebase SDKを使わないシンプル認証システム
 
 // 認証チェック
@@ -45,14 +73,9 @@ function checkAuthentication() {
     window.location.href = 'admin-login.html';
     return false;
 }
-// vtuber-data-manager-new.js: HTMLから分離したスクリプト
-// ここに元の<script>タグ内のJSコードをすべて移植してください。
-// 例: window.onload, 各種関数, イベントリスナー, API呼び出しなど
-// --- 以下はサンプル ---
-// window.onload = function() {
-//     // 初期化処理
-// };
-// --- 実際はvtuber-data-manager-new.htmlの<script>内の全コードを移植してください ---
+
+// onsubmit="addNewVtuber(event)" 対応: handleAddVtuberをwindow.addNewVtuberにバインド
+window.addNewVtuber = handleAddVtuber;
 
 const BASE_URL = 'https://us-central1-vtuber-335811.cloudfunctions.net';
 // ステータス表示
@@ -193,20 +216,21 @@ async function importData() {
             showStatus('❌ インポートするデータがありません', 'error');
             return;
         }
-        // birthday必須チェック
-        // 既存の format, parsedData を利用
+        // birthday必須チェック（"-"も許可）
         if (format === 'json') {
-            // JSON配列の場合
             if (Array.isArray(parsedData)) {
                 for (const item of parsedData) {
                     if (!item.birthday || item.birthday.trim() === '') {
                         showStatus('❌ birthday（誕生日）は必須項目です。未入力の行があります。', 'error');
                         return;
                     }
+                    if (!(item.birthday === '-' || /^\d{2}[-\/]\d{2}$/.test(item.birthday))) {
+                        showStatus('❌ birthday（誕生日）は MM-DD 形式または「-」で入力してください。', 'error');
+                        return;
+                    }
                 }
             }
         } else if (format === 'csv') {
-            // CSVの場合、birthday列が空ならエラー
             const lines = data.split('\n').filter(l => l.trim() !== '');
             const header = lines[0].split(',');
             const birthdayIdx = header.findIndex(h => h.trim() === 'birthday');
@@ -216,8 +240,13 @@ async function importData() {
             }
             for (let i = 1; i < lines.length; i++) {
                 const cols = lines[i].split(',');
-                if (!cols[birthdayIdx] || cols[birthdayIdx].trim() === '') {
+                const val = cols[birthdayIdx] ? cols[birthdayIdx].trim() : '';
+                if (!val) {
                     showStatus(`❌ birthday（誕生日）は必須項目です。${i+1}行目が未入力です。`, 'error');
+                    return;
+                }
+                if (!(val === '-' || /^\d{2}[-\/]\d{2}$/.test(val))) {
+                    showStatus(`❌ birthday（誕生日）は MM-DD 形式または「-」で入力してください。${i+1}行目`, 'error');
                     return;
                 }
             }
@@ -278,36 +307,49 @@ async function importData() {
 async function handleAddVtuber(event) {
     event.preventDefault();
     const channelId = document.getElementById('channelId').value.trim();
-    const name = document.getElementById('name').value.trim();
+    const name = document.getElementById('vtuberName').value.trim();
     const twitterName = document.getElementById('twitterName').value.trim();
-    const office = document.getElementById('office').value.trim();
-    const birthday = document.getElementById('birthday').value.trim();
-    const description = document.getElementById('description').value.trim();
-    if (!channelId || !name || !birthday) {
-        showStatus('❌ チャンネルID・名前・誕生日は必須項目です。', 'error');
+    // 選択中の事務所名を取得
+    const office = getSelectedOffice();
+    console.log('[handleAddVtuber] getSelectedOffice()直後:', office, typeof office);
+    if (!office || office === '') {
+        showStatus('❌ 事務所は必須項目です。必ず1つ選択してください。', 'error');
         return false;
     }
-    // 誕生日形式チェック（YYYY-MM-DD）
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday)) {
-        showStatus('❌ 誕生日は YYYY-MM-DD 形式で入力してください。', 'error');
+    const birthday = document.getElementById('birthday').value.trim();
+    // officeFlg取得
+    const officeFlgNode = document.querySelector('input[name="officeFlg"]:checked');
+    const officeFlg = officeFlgNode ? officeFlgNode.value : '';
+    const description = document.getElementById('description') ? document.getElementById('description').value.trim() : '';
+    if (!channelId || !name || !birthday || officeFlg === '') {
+        showStatus('❌ チャンネルID・名前・誕生日・事務所所属フラグは必須項目です。', 'error');
+        return false;
+    }
+    // 誕生日形式チェック（MM-DDまたは-）
+    if (!(birthday === '-' || /^\d{2}[-\/]\d{2}$/.test(birthday))) {
+        showStatus('❌ 誕生日は MM-DD 形式または「-」で入力してください。', 'error');
         return false;
     }
     showStatus('📝 新規VTuberを登録しています...', 'info');
     showProgress(true, 30);
     try {
-        const response = await fetch(`${BASE_URL}/addVtuberData`, {
+        // 送信データを事前に出力
+        const payload = {
+            channelId,
+            name,
+            twitterName,
+            office: office == null ? '' : office,
+            birthday,
+            officeFlg: officeFlg === 'true',
+            description
+        };
+        console.log('[AddVtuber] 送信データ:', payload);
+        const response = await fetch(`${typeof currentApiBase !== 'undefined' ? currentApiBase : BASE_URL}/addVtuberData`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                channelId,
-                name,
-                twitterName,
-                office,
-                birthday,
-                description
-            }),
+            body: JSON.stringify(payload),
         });
         showProgress(true, 80);
         if (!response.ok) {
@@ -318,6 +360,8 @@ async function handleAddVtuber(event) {
         if (result.success) {
             showStatus('✅ 新規VTuberを登録しました！', 'success');
             document.getElementById('addVtuberForm').reset();
+            // タブを維持し、画面リフレッシュやswitchTabを呼ばない
+            // 必要ならここでリスト再取得やフォームのみリセット
         } else {
             throw new Error(result.message || '登録に失敗しました');
         }
@@ -325,18 +369,17 @@ async function handleAddVtuber(event) {
         showStatus(`❌ 登録エラー: ${error.message}`, 'error');
     }
     showProgress(false);
-    return false;
+    // return false; // 画面リフレッシュ防止のためreturn不要
+    // 明示的にreturnしないことでsubmitのデフォルト動作を防ぐ
 }
 // Office選択肢を動的に生成
 function generateOfficeRadioButtons(officeList, officeMapping) {
     const container = document.getElementById('office-radio-group');
     container.innerHTML = '';
     officeMapping = officeMapping || {};
-    officeList.forEach(office => {
-        // officeMappingのキーを厳密に参照（大文字・小文字・余分な空白を除去）
+    officeList.forEach((office, idx) => {
         const key = office.trim();
         const displayName = officeMapping[key] || office;
-        const label = document.createElement('label');
         const panel = document.createElement('div');
         panel.className = 'office-panel-cute';
         panel.setAttribute('data-office', office);
@@ -345,6 +388,9 @@ function generateOfficeRadioButtons(officeList, officeMapping) {
             <span class="office-icon">🏢</span>
             <span class="office-name">${displayName}</span>
         `;
+        if (idx === 0) {
+            panel.classList.add('selected');
+        }
         container.appendChild(panel);
     });
     // "その他"オプションを最後に追加（パネル型で統一）
@@ -357,6 +403,10 @@ function generateOfficeRadioButtons(officeList, officeMapping) {
         <span class="office-name">その他</span>
     `;
     container.appendChild(otherPanel);
+    // 初期化時に必ず1つ選択状態にする（selectOfficeで副作用も同期）
+    if (officeList.length > 0) {
+        selectOffice(officeList[0]);
+    }
 }
 // 事務所オプションをロード
 async function loadOfficeOptions() {
@@ -780,27 +830,36 @@ window.loadOfficeOptions = loadOfficeOptions;
         // 事務所選択機能
         function selectOffice(officeName) {
             selectedOffice = officeName;
-            
+            console.log('[selectOffice] 選択事務所:', officeName);
             // すべてのパネルの選択状態をリセット
             document.querySelectorAll('.office-panel-cute').forEach(panel => {
                 panel.classList.remove('selected');
             });
-            // 選択されたパネルを強調
-            const selectedPanel = document.querySelector(`.office-panel-cute[data-office="${officeName}"]`);
-            if (selectedPanel) selectedPanel.classList.add('selected');
+            // 選択されたパネルを強調（なければ最初のパネルを選択）
+            let selectedPanel = document.querySelector(`.office-panel-cute[data-office="${officeName}"]`);
+            if (!selectedPanel) {
+                selectedPanel = document.querySelector('.office-panel-cute');
+                if (selectedPanel) {
+                    selectedPanel.classList.add('selected');
+                    selectedOffice = selectedPanel.getAttribute('data-office');
+                }
+            } else {
+                selectedPanel.classList.add('selected');
+            }
 
             // カスタム事務所名の表示/非表示
-            toggleCustomOffice(officeName);
-            
+            toggleCustomOffice(selectedOffice);
+            // 選択後のgetSelectedOffice()値を出力
+            console.log('[selectOffice] getSelectedOffice():', getSelectedOffice());
             // キャッシュクリア＋一覧再取得（タブ位置保持用）
-            refreshOfficeVtuberList(officeName);
-// キャッシュクリア＋一覧再取得（selectedOfficeを使う）
-function refreshOfficeVtuberList(officeName) {
-    clearVtuberDataCache();
-    // officeNameが未指定なら現在のselectedOfficeを使う
-    const office = officeName || selectedOffice;
-    displayOfficeVtubers(office);
-}
+            refreshOfficeVtuberList(selectedOffice);
+            // キャッシュクリア＋一覧再取得（selectedOfficeを使う）
+            function refreshOfficeVtuberList(officeName) {
+                clearVtuberDataCache();
+                // officeNameが未指定なら現在のselectedOfficeを使う
+                const office = officeName || selectedOffice;
+                displayOfficeVtubers(office);
+            }
         }
 
         // カスタム事務所名の表示/非表示
@@ -1284,29 +1343,35 @@ function displayVtuberList(vtubers) {
         function addNewEntry() {
             const bulkEntries = document.getElementById('bulk-entries');
             const entryId = `entry-${++bulkEntryCounter}`;
-            
-    const entryHtml = `
-        <form class="vtuber-entry vtuber-form vtuber-entry-row" id="${entryId}" data-entry-id="${entryId}" autocomplete="off" onsubmit="return false;" style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; background: #fff8fa; border-radius: 8px; border: 1px solid #ffe3e3; padding: 8px;">
-            <div class="status-indicator status-checking" id="${entryId}-status" style="width: 32px; text-align: center;">?</div>
-            <div class="form-group" style="flex: 1 1 120px; min-width: 100px;">
-                <input type="text" id="${entryId}-name" required placeholder="名前*" data-field="name" oninput="checkEntryDuplicates('${entryId}')" style="width: 100%; min-width: 80px; padding: 4px 8px; font-size: 14px;">
-            </div>
-            <div class="form-group" style="flex: 1 1 180px; min-width: 120px;">
-                <input type="text" id="${entryId}-channel" required placeholder="チャンネルID/@Handle*" data-field="channel" oninput="checkEntryDuplicates('${entryId}')" style="width: 100%; min-width: 100px; padding: 4px 8px; font-size: 14px;">
-            </div>
-            <div class="form-group" style="flex: 1 1 120px; min-width: 80px;">
-                <input type="text" id="${entryId}-twitter" placeholder="TwitterID" data-field="twitter" oninput="checkEntryDuplicates('${entryId}')" style="width: 100%; min-width: 60px; padding: 4px 8px; font-size: 14px;">
-            </div>
-            <div class="form-group" style="flex: 1 1 120px; min-width: 100px;">
-                <input type="date" id="${entryId}-birthday" required data-field="birthday" style="width: 100%; min-width: 80px; border: 2px solid #ffb6b9; border-radius: 8px; padding: 4px 8px; font-size: 14px; background: #fff0f6;">
-            </div>
-            <div class="form-buttons" style="flex: 0 0 60px;">
-                <button type="button" onclick="removeEntry('${entryId}')" class="btn-remove btn-secondary" style="padding: 4px 10px; font-size: 13px;">削除</button>
-            </div>
-        </form>
-    `;
-            
-            bulkEntries.insertAdjacentHTML('beforeend', entryHtml);
+            // テンプレートから複製
+            const template = document.getElementById('bulk-entry-template');
+            const clone = template.content.cloneNode(true);
+            // 各inputにユニークIDを付与
+            const form = clone.querySelector('form');
+            form.id = entryId;
+            form.setAttribute('data-entry-id', entryId);
+            // 名前・チャンネル・twitter・birthday
+            const fields = form.querySelectorAll('[data-field]');
+            fields.forEach(field => {
+                const base = field.getAttribute('data-field');
+                field.id = `${entryId}-${base}`;
+                // 重複チェックイベント
+                if (base === 'name' || base === 'channel' || base === 'twitter') {
+                    field.setAttribute('oninput', `checkEntryDuplicates('${entryId}')`);
+                }
+            });
+            // officeFlgラジオのname属性をユニーク化
+            const officeFlgRadios = form.querySelectorAll('input[type="radio"][name="officeFlg"]');
+            officeFlgRadios.forEach(radio => {
+                radio.name = `${entryId}-officeFlg`;
+            });
+            // 削除ボタン
+            const removeBtn = form.querySelector('.btn-remove');
+            if (removeBtn) removeBtn.setAttribute('onclick', `removeEntry('${entryId}')`);
+            // ステータスID
+            const statusDiv = form.querySelector('.status-indicator');
+            if (statusDiv) statusDiv.id = `${entryId}-status`;
+            bulkEntries.appendChild(clone);
             updateBulkStats();
         }
         
@@ -1437,50 +1502,57 @@ function displayVtuberList(vtubers) {
                 let errorCount = 0;
                 
                 // 各エントリを順番に処理
-                for (let i = 0; i < validEntries.length; i++) {
-                    const entry = validEntries[i];
-                    const nameInput = entry.querySelector('[data-field="name"]');
-                    const channelInput = entry.querySelector('[data-field="channel"]');
-                    const twitterInput = entry.querySelector('[data-field="twitter"]');
-                    
-                    const vtuberData = {
-                        name: nameInput.value.trim(),
-                        channelId: channelInput.value.trim(),
-                        twitterName: twitterInput.value.trim(),
-                        office: selectedOffice
-                    };
-                    
-                    // @Handleの場合は自動変換
-                    if (vtuberData.channelId.startsWith('@')) {
-                        const convertedId = await convertHandleToChannelId(vtuberData.channelId);
-                        vtuberData.channelId = convertedId;
-                    }
-                    
-                    try {
-                        const response = await fetch(`${currentApiBase}/addVtuberData`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(vtuberData)
-                        });
-                        
-                        const result = await response.json();
-                        
-                        if (result.success) {
-                            successCount++;
-                            // 成功したエントリを削除
-                            entry.remove();
-                        } else {
-                            errorCount++;
-                            results.push(`❌ ${vtuberData.name}: ${result.error || '登録失敗'}`);
-                        }
-                    } catch (error) {
-                        errorCount++;
-                        results.push(`❌ ${vtuberData.name}: ${error.message}`);
-                    }
-                    
-                    // 進捗更新
-                    showStatus(`📤 一括登録中... (${i + 1}/${validEntries.length})`, 'info');
+            for (let i = 0; i < validEntries.length; i++) {
+                const entry = validEntries[i];
+                const nameInput = entry.querySelector('[data-field="name"]');
+                const channelInput = entry.querySelector('[data-field="channel"]');
+                const twitterInput = entry.querySelector('[data-field="twitter"]');
+                const birthdayInput = entry.querySelector('[data-field="birthday"]');
+                // officeFlgラジオ取得
+                const officeFlgRadio = entry.querySelector('input[type="radio"][name$="officeFlg"]:checked');
+                const birthdayValue = birthdayInput.value.trim();
+                // MM-DD形式または-バリデーション
+                if (!(birthdayValue === '-' || /^\d{2}[-\/]\d{2}$/.test(birthdayValue))) {
+                    showStatus(`❌ 誕生日は MM-DD 形式または「-」で入力してください: ${nameInput.value}`, 'error');
+                    continue;
                 }
+                if (!officeFlgRadio) {
+                    showStatus(`❌ 事務所所属フラグ（officeFlg）は必須です: ${nameInput.value}`, 'error');
+                    continue;
+                }
+                const vtuberData = {
+                    name: nameInput.value.trim(),
+                    channelId: channelInput.value.trim(),
+                    twitterName: twitterInput.value.trim(),
+                    birthday: birthdayValue,
+                    office: selectedOffice,
+                    officeFlg: officeFlgRadio.value === 'true'
+                };
+                // @Handleの場合は自動変換
+                if (vtuberData.channelId.startsWith('@')) {
+                    const convertedId = await convertHandleToChannelId(vtuberData.channelId);
+                    vtuberData.channelId = convertedId;
+                }
+                try {
+                    const response = await fetch(`${currentApiBase}/addVtuberData`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(vtuberData)
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        successCount++;
+                        entry.remove();
+                    } else {
+                        errorCount++;
+                        results.push(`❌ ${vtuberData.name}: ${result.error || '登録失敗'}`);
+                    }
+                } catch (error) {
+                    errorCount++;
+                    results.push(`❌ ${vtuberData.name}: ${error.message}`);
+                }
+                showStatus(`📤 一括登録中... (${i + 1}/${validEntries.length})`, 'info');
+            }
                 
                 // 結果表示
                 let statusMessage = `✅ 一括登録完了! 成功: ${successCount}件`;
@@ -2127,7 +2199,7 @@ async function loadRegisteredVtubers() {
         }
         
         const searchTerm = document.getElementById('vtuberSearchInput').value.toLowerCase().trim();
-        const officeFilter = document.getElementById('officeFilterSelect').value;
+        const officeFilter = document.getElementById('office-filter-select').value;
         
         // 検索条件が何も指定されていない場合は全件表示
         if (!searchTerm && !officeFilter) {
