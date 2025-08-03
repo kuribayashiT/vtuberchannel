@@ -59,7 +59,26 @@ class _SideMenu extends State<SideMenu> {
     try {
       final Map<String, dynamic> fetchedCategoriesMap =
           await GoogleCloudFunctions.getOfficeData();
-      final List<String> fetchedCategories = fetchedCategoriesMap.keys.toList();
+
+      print(
+          '【LOG】fetchedCategoriesMap.keys: ${fetchedCategoriesMap.keys.toList()}');
+      // 並び順をorderプロパティでソート（なければそのまま）
+      List<String> fetchedCategories = fetchedCategoriesMap.keys.toList();
+      if (fetchedCategories.isNotEmpty &&
+          fetchedCategoriesMap[fetchedCategories.first] is List &&
+          (fetchedCategoriesMap[fetchedCategories.first] as List).isNotEmpty &&
+          (fetchedCategoriesMap[fetchedCategories.first][0]
+                  as Map<String, dynamic>)
+              .containsKey('order')) {
+        fetchedCategories.sort((a, b) {
+          final aOrder = (fetchedCategoriesMap[a][0]['order'] ?? 9999) as int;
+          final bOrder = (fetchedCategoriesMap[b][0]['order'] ?? 9999) as int;
+          return aOrder.compareTo(bOrder);
+        });
+        print('【LOG】orderプロパティでソート後: $fetchedCategories');
+      } else {
+        print('【LOG】orderプロパティなし、そのまま: $fetchedCategories');
+      }
 
       fetchedCategoriesMap.forEach((officeName, vtuberList) {
         final vtuberWithIcon = vtuberList.firstWhere(
@@ -73,10 +92,18 @@ class _SideMenu extends State<SideMenu> {
           icons[officeName] = ""; // アイコンがない場合のデフォルト
         }
       });
+      print('【LOG】icons: $icons');
+      // Provider経由でofficeIconsをセット
+      Provider.of<SelectedCategorie>(context, listen: false)
+          .setOfficeIcons(icons);
       if (_isMounted) {
         setState(() {
           categories = fetchedCategories;
         });
+        print('【LOG】setState後 categories: $categories');
+        Provider.of<SelectedCategorie>(context, listen: false)
+            .setCategoriesOrder(categories);
+        print('【LOG】Provider.setCategoriesOrder: $categories');
       }
       _loadSelectedCategories();
     } catch (e) {
@@ -221,8 +248,22 @@ class _SideMenu extends State<SideMenu> {
 // アプリケーション全体の状態を管理するためのProvider
 class SelectedCategorie with ChangeNotifier {
   Set<String> _selectedCategories = {}; // 選択されたカテゴリを保持する変数
+  List<String> _categoriesOrder = [];
+  Map<String, String> _officeIcons = {};
 
   Set<String> get selectedCategories => _selectedCategories;
+  List<String> get categoriesOrder => _categoriesOrder;
+  Map<String, String> get officeIcons => _officeIcons;
+
+  void setCategoriesOrder(List<String> order) {
+    _categoriesOrder = order;
+    notifyListeners();
+  }
+
+  void setOfficeIcons(Map<String, String> icons) {
+    _officeIcons = icons;
+    notifyListeners();
+  }
 
   // メッセージを更新するメソッド
   void updateSelectedCategories(Set<String> newselectedCategories) {
@@ -239,11 +280,5 @@ class SelectedCategorie with ChangeNotifier {
   // メッセージを更新するメソッド
   void updateSelectedCategoriesNonNoti(Set<String> newselectedCategories) {
     _selectedCategories = newselectedCategories;
-    // if (_selectedCategories.isEmpty) {
-    //   CustomToast.showToast(openContext, "選択項目がありません。フィルターを解除します。");
-    // }else{
-    //   String categoriesText = _selectedCategories.join(' / ');
-    //   CustomToast.showToast(openContext, "フィルターを設定しました。$categoriesText");
-    // }
   }
 }

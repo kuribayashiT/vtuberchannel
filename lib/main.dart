@@ -29,16 +29,15 @@ import 'videoDistribution/videoDistribution.dart';
 import 'news/news.dart';
 import 'ranking.dart';
 import 'vtuberList.dart';
-import 'sideMenu.dart';
+import './sideMenu.dart';
 // import 'dart:html' as html;
 import 'package:url_launcher/url_launcher.dart';
-
 
 Widget topTitle = const SizedBox();
 double CupertinoTabBarHight = 0.0;
 int YoutubeNativeADInterval = 7;
 int InterstitialADInterval = 50;
-final AdHelper adHelper =AdHelper(maxNativeAds: 3);
+final AdHelper adHelper = AdHelper(maxNativeAds: 3);
 // ignore: prefer_typing_uninitialized_variables
 var openContext;
 bool appLaunchByPushTapFlg = false;
@@ -208,8 +207,10 @@ class MyHomePageState extends State<MyHomePage>
       vtuberList(),
       ranking(),
       ThreadListPage(),
-      
     ];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      initializeCategoriesOrder(context);
+    });
 
     /// Firebase Remote Configの初期化
     FirebaseRemoteConfigService().initRemoteConfig();
@@ -291,7 +292,6 @@ class MyHomePageState extends State<MyHomePage>
     } else {
       // iOSやAndroid向けの処理をここに書く
       adHelper.interstitialAdShow();
-        
     }
     if (_tabController.index != 2) {
       Provider.of<ChangeTopTitle>(context, listen: false)
@@ -397,7 +397,7 @@ class MyHomePageState extends State<MyHomePage>
                   leading: Builder(
                     builder: (context) {
                       return Row(
-                        mainAxisSize:MainAxisSize.min,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           SizedBox(
                             width: 48, // タップエリアを広げる
@@ -540,38 +540,6 @@ class MyHomePageState extends State<MyHomePage>
                         icon: Icon(Icons.forum),
                         label: 'Chat',
                       ),
-                      // BottomNavigationBarItem(
-                      //   icon: Stack(
-                      //     children: [
-                      //       const Icon(Icons.settings),
-                      //       if (isOshiraseUpdated)
-                      //         Positioned(
-                      //           right: 0,
-                      //           top: 0,
-                      //           child: Container(
-                      //             padding: const EdgeInsets.all(2),
-                      //             decoration: BoxDecoration(
-                      //               color: Colors.red,
-                      //               borderRadius: BorderRadius.circular(10),
-                      //             ),
-                      //             constraints: const BoxConstraints(
-                      //               minWidth: 16,
-                      //               minHeight: 16,
-                      //             ),
-                      //             child: const Text(
-                      //               ' ', // バッジの数字など
-                      //               style: TextStyle(
-                      //                 color: Colors.white,
-                      //                 fontSize: 10,
-                      //               ),
-                      //               textAlign: TextAlign.center,
-                      //             ),
-                      //           ),
-                      //         ),
-                      //     ],
-                      //   ),
-                      //   label: 'Option',
-                      // ),
                     ],
                   ),
                   tabBuilder: (BuildContext context, int index) {

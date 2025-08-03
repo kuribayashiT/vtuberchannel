@@ -20,6 +20,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/data/latest.dart' as tzdata;
+import 'googleCloudFunctions.dart';
+import 'sideMenu.dart';
 // import 'package:vtuberchannel/videoDistribution/livePage.dart';
 import '/main.dart';
 // import 'package:flutter_native_timezone/flutter_native_timezone.dart';
@@ -512,6 +514,42 @@ class FasterScrollPhysics extends BouncingScrollPhysics {
     // スクロール速度を倍にする
     return super.applyPhysicsToUserOffset(position, offset * 1.3);
   }
+}
+
+Future<void> initializeCategoriesOrder(context) async {
+  final Map<String, dynamic> fetchedCategoriesMap =
+      await GoogleCloudFunctions.getOfficeData();
+
+  List<String> fetchedCategories = fetchedCategoriesMap.keys.toList();
+  if (fetchedCategories.isNotEmpty &&
+      fetchedCategoriesMap[fetchedCategories.first] is List &&
+      (fetchedCategoriesMap[fetchedCategories.first] as List).isNotEmpty &&
+      (fetchedCategoriesMap[fetchedCategories.first][0] as Map<String, dynamic>)
+          .containsKey('order')) {
+    fetchedCategories.sort((a, b) {
+      final aOrder = (fetchedCategoriesMap[a][0]['order'] ?? 9999) as int;
+      final bOrder = (fetchedCategoriesMap[b][0]['order'] ?? 9999) as int;
+      return aOrder.compareTo(bOrder);
+    });
+  }
+  // Providerにセット
+  Provider.of<SelectedCategorie>(context, listen: false)
+      .setCategoriesOrder(fetchedCategories);
+
+  // アイコンもセットしたい場合
+  Map<String, String> icons = {};
+  fetchedCategoriesMap.forEach((officeName, vtuberList) {
+    final vtuberWithIcon = vtuberList.firstWhere(
+      (vtuber) => vtuber['officeFlg'] == true,
+      orElse: () => null,
+    );
+    if (vtuberWithIcon != null && vtuberWithIcon['channelThumbnail'] != null) {
+      icons[officeName] = vtuberWithIcon['channelThumbnail'];
+    } else {
+      icons[officeName] = "";
+    }
+  });
+  Provider.of<SelectedCategorie>(context, listen: false).setOfficeIcons(icons);
 }
 
 // ===============================
