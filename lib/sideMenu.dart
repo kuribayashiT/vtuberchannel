@@ -38,19 +38,17 @@ class _SideMenu extends State<SideMenu> {
   Future<void> _loadSelectedCategories() async {
     _prefs = await SharedPreferences.getInstance();
     setState(() {
-      // SharedPreferencesから保存されている選択されたカテゴリを読み込む
       selectedCategories
           .addAll(_prefs.getStringList('selectedCategories') ?? []);
-      Provider.of<SelectedCategorie>(context, listen: false)
-          .updateSelectedCategoriesNonNoti(selectedCategories);
+      // contextはBuilder内で使う
     });
   }
 
   // SharedPreferencesに選択されたカテゴリを保存するメソッド
-  Future<void> _saveSelectedCategories() async {
+  Future<void> _saveSelectedCategories(BuildContext ctx) async {
     await _prefs.setStringList(
         'selectedCategories',
-        Provider.of<SelectedCategorie>(context, listen: false)
+        Provider.of<SelectedCategorie>(ctx, listen: false)
             .selectedCategories
             .toList());
   }
@@ -62,7 +60,6 @@ class _SideMenu extends State<SideMenu> {
 
       print(
           '【LOG】fetchedCategoriesMap.keys: ${fetchedCategoriesMap.keys.toList()}');
-      // 並び順をorderプロパティでソート（なければそのまま）
       List<String> fetchedCategories = fetchedCategoriesMap.keys.toList();
       if (fetchedCategories.isNotEmpty &&
           fetchedCategoriesMap[fetchedCategories.first] is List &&
@@ -89,29 +86,24 @@ class _SideMenu extends State<SideMenu> {
             vtuberWithIcon['channelThumbnail'] != null) {
           icons[officeName] = vtuberWithIcon['channelThumbnail'];
         } else {
-          icons[officeName] = ""; // アイコンがない場合のデフォルト
+          icons[officeName] = "";
         }
       });
       print('【LOG】icons: $icons');
       // Provider経由でofficeIconsをセット
-      Provider.of<SelectedCategorie>(context, listen: false)
-          .setOfficeIcons(icons);
+      // contextはBuilder内で使う
       if (_isMounted) {
         setState(() {
           categories = fetchedCategories;
         });
         print('【LOG】setState後 categories: $categories');
-        Provider.of<SelectedCategorie>(context, listen: false)
-            .setCategoriesOrder(categories);
-        print('【LOG】Provider.setCategoriesOrder: $categories');
       }
       _loadSelectedCategories();
     } catch (e) {
       print('Error fetching data: $e');
-      // エラーが発生した場合も `_isMounted` を確認してから `setState` を呼ぶ
       if (_isMounted) {
         setState(() {
-          // エラーの処理を行う（例: エラーメッセージを表示する）
+          // エラーの処理
         });
       }
     }
@@ -120,126 +112,138 @@ class _SideMenu extends State<SideMenu> {
   @override
   Widget build(BuildContext context) {
     return Drawer(
-      child: Column(
-        children: <Widget>[
-          SizedBox(
-            height: 150, // ドロワーヘッダーの高さを調整
-            child: DrawerHeader(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    '表示する事務所選択',
-                    style: TextStyle(
-                      fontSize: 18, // フォントサイズを調整
-                    ),
+      child: Builder(
+        builder: (drawerContext) {
+          // ProviderやNavigatorはこのdrawerContextで参照
+          // Providerのセットや更新もdrawerContextで
+          Provider.of<SelectedCategorie>(drawerContext, listen: false)
+              .setOfficeIcons(icons);
+          Provider.of<SelectedCategorie>(drawerContext, listen: false)
+              .setCategoriesOrder(categories);
+          Provider.of<SelectedCategorie>(drawerContext, listen: false)
+              .updateSelectedCategoriesNonNoti(selectedCategories);
+
+          return Column(
+            children: <Widget>[
+              SizedBox(
+                height: 150,
+                child: DrawerHeader(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () {
-                      Navigator.pop(context); // ドロワーを閉じる
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.only(bottom: 100),
-              child: Column(
-                children: <Widget>[
-                  // 選択項目のリスト表示
-                  if (categories.isEmpty)
-                    const Padding(
-                        padding: EdgeInsets.only(top: 60.0),
-                        child: Center(child: CircularProgressIndicator()))
-                  else
-                    for (String category in categories)
-                      GestureDetector(
-                        child: InkWell(
-                          onTap: () {
-                            // タップ時にチェックボックスの状態を切り替え
-                            setState(() {
-                              if (selectedCategories.contains(category)) {
-                                selectedCategories.remove(category);
-                              } else {
-                                selectedCategories.add(category);
-                              }
-                              Provider.of<SelectedCategorie>(context,
-                                      listen: false)
-                                  .updateSelectedCategories(selectedCategories);
-                              _saveSelectedCategories(); // 選択されたカテゴリを保存
-                            });
-                          },
-                          child: Row(
-                            children: [
-                              Checkbox(
-                                side: const BorderSide(width: 1),
-                                activeColor: Colors.white,
-                                fillColor: WidgetStateProperty.resolveWith(
-                                    (states) => Colors.white),
-                                shape: const RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.all(Radius.circular(10))),
-                                checkColor: Colors.black,
-                                value: selectedCategories.contains(category),
-                                onChanged: (value) {
-                                  // チェックボックスが変更されたときに選択されたカテゴリを更新
-                                  setState(() {
-                                    if (value ?? false) {
-                                      selectedCategories.add(category);
-                                    } else {
-                                      selectedCategories.remove(category);
-                                    }
-                                    Provider.of<SelectedCategorie>(context,
-                                            listen: false)
-                                        .updateSelectedCategories(
-                                            selectedCategories);
-                                    _saveSelectedCategories(); // 選択されたカテゴリを保存
-                                  });
-                                },
-                              ),
-                              (category == '個人' || category == 'person')
-                                  ? CircleAvatar(
-                                      radius: 12,
-                                      backgroundColor: Colors.grey.shade200,
-                                      child: const Icon(Icons.person,
-                                          size: 16, color: Colors.grey),
-                                    )
-                                  : CircleAvatar(
-                                      radius: 12,
-                                      backgroundImage:
-                                          NetworkImage(icons[category] ?? ''),
-                                      backgroundColor: Colors.grey.shade200,
-                                      onBackgroundImageError: (_, __) =>
-                                          const Icon(
-                                        Icons.image_not_supported,
-                                        size: 16,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                // テキスト部分を広げて、タップ領域を広く
-                                child: Text(
-                                  category,
-                                  overflow:
-                                      TextOverflow.ellipsis, // テキストが長すぎる場合の処理
-                                ),
-                              ),
-                            ],
-                          ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        '表示する事務所選択',
+                        style: TextStyle(
+                          fontSize: 18,
                         ),
                       ),
-                ],
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          Navigator.of(drawerContext).pop();
+                          // Navigator.pop(drawerContext);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
-        ],
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(bottom: 100),
+                  child: Column(
+                    children: <Widget>[
+                      if (categories.isEmpty)
+                        const Padding(
+                            padding: EdgeInsets.only(top: 60.0),
+                            child: Center(child: CircularProgressIndicator()))
+                      else
+                        for (String category in categories)
+                          GestureDetector(
+                            child: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  if (selectedCategories.contains(category)) {
+                                    selectedCategories.remove(category);
+                                  } else {
+                                    selectedCategories.add(category);
+                                  }
+                                  Provider.of<SelectedCategorie>(drawerContext,
+                                          listen: false)
+                                      .updateSelectedCategories(
+                                          selectedCategories);
+                                  _saveSelectedCategories(drawerContext);
+                                });
+                              },
+                              child: Row(
+                                children: [
+                                  Checkbox(
+                                    side: const BorderSide(width: 1),
+                                    activeColor: Colors.white,
+                                    fillColor: WidgetStateProperty.resolveWith(
+                                        (states) => Colors.white),
+                                    shape: const RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.all(
+                                            Radius.circular(10))),
+                                    checkColor: Colors.black,
+                                    value:
+                                        selectedCategories.contains(category),
+                                    onChanged: (value) {
+                                      setState(() {
+                                        if (value ?? false) {
+                                          selectedCategories.add(category);
+                                        } else {
+                                          selectedCategories.remove(category);
+                                        }
+                                        Provider.of<SelectedCategorie>(
+                                                drawerContext,
+                                                listen: false)
+                                            .updateSelectedCategories(
+                                                selectedCategories);
+                                        _saveSelectedCategories(drawerContext);
+                                      });
+                                    },
+                                  ),
+                                  (category == '個人' || category == 'person')
+                                      ? CircleAvatar(
+                                          radius: 12,
+                                          backgroundColor: Colors.grey.shade200,
+                                          child: const Icon(Icons.person,
+                                              size: 16, color: Colors.grey),
+                                        )
+                                      : CircleAvatar(
+                                          radius: 12,
+                                          backgroundImage: NetworkImage(
+                                              icons[category] ?? ''),
+                                          backgroundColor: Colors.grey.shade200,
+                                          onBackgroundImageError: (_, __) =>
+                                              const Icon(
+                                            Icons.image_not_supported,
+                                            size: 16,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      category,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -247,25 +251,23 @@ class _SideMenu extends State<SideMenu> {
 
 // アプリケーション全体の状態を管理するためのProvider
 class SelectedCategorie with ChangeNotifier {
-  Set<String> _selectedCategories = {}; // 選択されたカテゴリを保持する変数
+  Set<String> _selectedCategories = {};
   List<String> _categoriesOrder = [];
   Map<String, String> _officeIcons = {};
 
   Set<String> get selectedCategories => _selectedCategories;
   List<String> get categoriesOrder => _categoriesOrder;
   Map<String, String> get officeIcons => _officeIcons;
-
   void setCategoriesOrder(List<String> order) {
     _categoriesOrder = order;
-    notifyListeners();
+    // notifyListeners();
   }
 
   void setOfficeIcons(Map<String, String> icons) {
     _officeIcons = icons;
-    notifyListeners();
+    // notifyListeners();
   }
 
-  // メッセージを更新するメソッド
   void updateSelectedCategories(Set<String> newselectedCategories) {
     _selectedCategories = newselectedCategories;
     if (_selectedCategories.isEmpty) {
@@ -274,10 +276,9 @@ class SelectedCategorie with ChangeNotifier {
       String categoriesText = _selectedCategories.join(' / ');
       CustomToast.showToast(openContext, "フィルターを設定しました。$categoriesText");
     }
-    notifyListeners(); // 変更をリスナーに通知
+    notifyListeners();
   }
 
-  // メッセージを更新するメソッド
   void updateSelectedCategoriesNonNoti(Set<String> newselectedCategories) {
     _selectedCategories = newselectedCategories;
   }

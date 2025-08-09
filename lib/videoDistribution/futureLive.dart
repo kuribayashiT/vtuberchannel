@@ -125,17 +125,20 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const CuteLoadingWidget(
-                  message: '配信予定を読み込み中…', color: Color(0xFF2563EB));
+                  message: '配信予定を読み込み中…', color: Colors.blueAccent);
             } else if (snapshot.hasError) {
               return Center(child: Text('Error: ${snapshot.error}'));
             } else {
               List<dynamic> data = snapshot.data!;
               if (data.isEmpty) {
-                return CuteEmptyWidget(
+                return const Center(
+                  child: CuteEmptyWidget(
                     message: '配信予定の動画はありません',
-                    icon: const Icon(Icons.live_tv,
-                        size: 56, color: Color(0xFF2563EB)),
-                    color: const Color(0xFF2563EB));
+                    icon: Icon(Icons.video_library,
+                        size: 56, color: Colors.blueAccent),
+                    color: Colors.blueAccent,
+                  ),
+                );
               } else {
                 try {
                   if (row > 1) {

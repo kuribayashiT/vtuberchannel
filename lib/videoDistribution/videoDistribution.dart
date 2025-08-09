@@ -7,7 +7,6 @@ import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart' as provider;
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,7 +21,6 @@ import 'todayLiveSchejule.dart';
 class videoDistribution extends StatelessWidget {
   const videoDistribution({Key? key}) : super(key: key);
 
-  //const videoDistribution({super.key});
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -30,28 +28,19 @@ class videoDistribution extends StatelessWidget {
       length: 5, // タブの数
       child: Scaffold(
         appBar: const PreferredSize(
-          preferredSize:
-              Size.fromHeight(kToolbarHeight), // カスタムAppBarの高さをナビゲーションバーと同じに設定
+          preferredSize: Size.fromHeight(kToolbarHeight),
           child: CustomAppBar(),
         ),
         body: TabBarView(
-          physics: kIsWeb ? const NeverScrollableScrollPhysics() : null, // Webの時だけスクロール禁止
+          physics: kIsWeb
+              ? const NeverScrollableScrollPhysics()
+              : null, // Webの時だけスクロール禁止
           children: [
-            Center(
-              child: PastLive(),
-            ),
-            const Center(
-              child: LivePage(),
-            ),
-            Center(
-              child: TodayLiveScheduleTab(),
-            ),
-            Center(
-              child: TomorrowLiveScheduleTab(),
-            ),
-            Center(
-              child: FutureLive(),
-            ),
+            Center(child: PastLive()),
+            const Center(child: LivePage()),
+            Center(child: TodayLiveScheduleTab()),
+            Center(child: TomorrowLiveScheduleTab()),
+            Center(child: FutureLive()),
           ],
         ),
       ),
@@ -87,9 +76,8 @@ class VideoWidget extends StatefulWidget {
   final String videoUrl;
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
 
-  // コンストラクタで初期化
   VideoWidget({
-    Key? key, // key パラメータを追加
+    Key? key,
     required this.data,
     required this.now,
     required this.height,
@@ -98,7 +86,6 @@ class VideoWidget extends StatefulWidget {
         super(key: key);
 
   @override
-  // ignore: library_private_types_in_public_api
   _VideoWidgetState createState() => _VideoWidgetState();
 }
 
@@ -111,9 +98,7 @@ class _VideoWidgetState extends State<VideoWidget> {
     return prefs.getStringList('favorites') ?? [];
   });
 
-  bool pushRegi = false;
-  // // ignore: unused_field
-  // final Offset _position = const Offset(8, 8);
+  bool isTapEnabled = true;
 
   @override
   void initState() {
@@ -141,15 +126,13 @@ class _VideoWidgetState extends State<VideoWidget> {
     );
   }
 
-  // VideoWidget(this.data, this.now, this.height);
   bool isHeartFilled = false;
   Widget buildSquareLayout(
       Map<String, dynamic> data, DateTime now, double height) {
     DateTime comparisonDateTime = DateTime.parse(data["comparisonDay"]);
     bool showButton = comparisonDateTime.isAfter(now);
-    bool isTapEnabled = true;
-    // double height = calculateItemHeight(context);
     double screenWidth = MediaQuery.of(context).size.width;
+    int row = 1;
     if (MediaQuery.of(context).size.width > 1000) {
       row = 3;
       screenWidth = (MediaQuery.of(context).size.width - 16) / row;
@@ -163,14 +146,14 @@ class _VideoWidgetState extends State<VideoWidget> {
           .getInstancepushNotification()
           .checkRegistPushFromVideoId(data["videoID"]),
       builder: (context, snapshot) {
-        bool pushRegi = snapshot.data ?? false; // データがない場合はデフォルト値を使用
+        bool? pushRegi = snapshot.data;
+        bool isLoading = snapshot.connectionState != ConnectionState.done;
         return InkWell(
           onTap: () {
             provider.Provider.of<YoutubePlayerState>(context, listen: false)
                 .setVideoId(data["videoID"]);
           },
           child: Stack(children: [
-            // 通常のリストアイテムのビュー
             SizedBox(
               height: height,
               width: double.infinity,
@@ -185,9 +168,8 @@ class _VideoWidgetState extends State<VideoWidget> {
                       alignment: Alignment.center,
                       children: [
                         SizedBox(
-                          // ContainerでAspectRatioをラップ
-                          width: screenWidth, // 画面幅に合わせて設定
-                          height: screenWidth * 9 / 16, // 16:9のアスペクト比を保つ
+                          width: screenWidth,
+                          height: screenWidth * 9 / 16,
                           child: AspectRatio(
                             aspectRatio: 16 / 9,
                             child: CachedNetworkImage(
@@ -209,78 +191,98 @@ class _VideoWidgetState extends State<VideoWidget> {
                                   sigmaY: 5.0,
                                 ),
                                 child: Container(
-                                    width: 250,
-                                    height: 60,
-                                    decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.8),
-                                        borderRadius:
-                                            BorderRadius.circular(12)),
-                                    child: SwitchListTile(
-                                      value: pushRegi,
-                                      activeColor: Colors.blueAccent,
-                                      inactiveTrackColor: Colors.white,
-                                      inactiveThumbColor: Colors.blueAccent,
-                                      trackOutlineColor:
-                                          const WidgetStatePropertyAll(
-                                              Colors.transparent),
-                                      title: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // テキスト
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.start,
-                                            children: [
-                                              const SizedBox(width: 8.0),
-                                              Icon(
-                                                pushRegi
-                                                    ? Icons.notifications
-                                                    : Icons.notifications_none,
-                                                color: Colors.blueAccent,
-                                              ),
-                                              const SizedBox(width: 4.0),
-                                              const Text(
-                                                'Push通知',
-                                                style: TextStyle(
-                                                  color: Colors.blueAccent,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16.0,
-                                                ),
-                                              ), // アイコンとテキストの間隔
-                                              // アイコン
-                                            ],
-                                          ),
-                                          const SizedBox(
-                                              height: 4.0), // １行目と２行目の間隔
-                                          // ２行目のテキスト
-                                          Text(
-                                            convertToJapanDayTime(
-                                                data["comparisonDay"]),
-                                            style: const TextStyle(
-                                              color: Colors.blue,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 12.0,
+                                  width: 250,
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.8),
+                                      borderRadius: BorderRadius.circular(12)),
+                                  child: SwitchListTile(
+                                    value: pushRegi ?? false,
+                                    activeColor: Colors.blueAccent,
+                                    inactiveTrackColor: Colors.white,
+                                    inactiveThumbColor: Colors.blueAccent,
+                                    trackOutlineColor:
+                                        const WidgetStatePropertyAll(
+                                            Colors.transparent),
+                                    title: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.start,
+                                          children: [
+                                            const SizedBox(width: 8.0),
+                                            Icon(
+                                              pushRegi == true
+                                                  ? Icons.notifications
+                                                  : Icons.notifications_none,
+                                              color: Colors.blueAccent,
                                             ),
-                                            textAlign: TextAlign.start,
+                                            const SizedBox(width: 4.0),
+                                            const Text(
+                                              'Push通知',
+                                              style: TextStyle(
+                                                color: Colors.blueAccent,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16.0,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4.0),
+                                        Text(
+                                          convertToJapanDayTime(
+                                              data["comparisonDay"]),
+                                          style: const TextStyle(
+                                            color: Colors.blue,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12.0,
                                           ),
-                                        ],
-                                      ),
-                                      onChanged: (bool value) async {
-                                        if (!kIsWeb) {
-                                          if (!isTapEnabled) {
-                                            return;
-                                          } else {
-                                            await _handleTap(data);
+                                          textAlign: TextAlign.start,
+                                        ),
+                                      ],
+                                    ),
+                                    onChanged: (isLoading || !isTapEnabled)
+                                        ? null
+                                        : (bool value) async {
                                             setState(() {
-                                              isTapEnabled = true;
-                                              // 他の処理もここで行う
+                                              isTapEnabled = false;
                                             });
-                                          }
-                                        } else {
-                                          await _handleTapWeb(data);
-                                        }
-                                      },
-                                    )),
+                                            try {
+                                              if (value) {
+                                                await provider.Provider.of<
+                                                        PushRegisterState>(
+                                                  context,
+                                                  listen: false,
+                                                )
+                                                    .getInstancepushNotification()
+                                                    .registerMessage(data);
+                                                showMessage(
+                                                    context, "Push通知を登録しました");
+                                              } else {
+                                                await provider.Provider.of<
+                                                        PushRegisterState>(
+                                                  context,
+                                                  listen: false,
+                                                )
+                                                    .getInstancepushNotification()
+                                                    .removeNotification(
+                                                        data["videoID"]);
+                                                showMessage(
+                                                    context, "Push通知を取り消しました");
+                                              }
+                                              setState(() {});
+                                            } catch (e) {
+                                              showMessage(
+                                                  context, "Push通知の処理に失敗しました");
+                                            } finally {
+                                              setState(() {
+                                                isTapEnabled = true;
+                                              });
+                                            }
+                                          },
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -348,9 +350,6 @@ class _VideoWidgetState extends State<VideoWidget> {
                                   const Padding(
                                       padding: EdgeInsets.only(right: 8.0)),
                                   GestureDetector(
-                                    // onTap: () async {
-                                    //   // ボタンのタップ時の処理
-                                    // },
                                     child: FutureBuilder<bool>(
                                       future:
                                           _checkFavoriteStatus(data['videoID']),
@@ -393,12 +392,9 @@ class _VideoWidgetState extends State<VideoWidget> {
                                               showMessage(openContext,
                                                   "お気に入り動画に登録しました。");
                                             }
-                                            // ボタンの表示を更新するためにsetStateを呼び出す
                                             setState(() {});
                                           },
-                                          splashColor:
-                                              Colors.black, // Rippleエフェクトの色を設定
-                                          // highlightColor: Colors.blue, // Rippleエフェクトの色を設定
+                                          splashColor: Colors.black,
                                         );
                                       },
                                     ),
@@ -424,56 +420,9 @@ class _VideoWidgetState extends State<VideoWidget> {
 
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
-  Future<void> _handleTap(Map<String, dynamic> data) async {
-    if (!pushRegi) {
-      var status = await Permission.notification.status;
-      if (status.isDenied || status == PermissionStatus.permanentlyDenied) {
-        // ignore: use_build_context_synchronously
-        showDialog(
-          // ignore: use_build_context_synchronously
-          context: context,
-          builder: (context) {
-            return SimpleDialog(
-              title: const Text(
-                  "この機能を使用するには、設定アプリにて「通知を許可」に設定頂いたのち、再度アプリを開き直していただく必要があります。"),
-              children: [
-                SimpleDialogOption(
-                  onPressed: () {
-                    openAppSettings();
-                    Navigator.pop(context);
-                  },
-                  child: const Text("設定アプリを起動する"),
-                ),
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("何もしないで閉じる"),
-                ),
-              ],
-            );
-          },
-        );
-      } else {
-        // Push通知を設定
-        pushRegi = true;
-        // ignore: use_build_context_synchronously
-        await provider.Provider.of<PushRegisterState>(context, listen: false)
-            .getInstancepushNotification()
-            .registerMessage(data);
-        // ignore: use_build_context_synchronously
-        showMessage(openContext, "Push通知を登録しました");
-      }
-    } else {
-      // Push通知を取り消し
-      pushRegi = false;
-      await provider.Provider.of<PushRegisterState>(context, listen: false)
-          .getInstancepushNotification()
-          .removeNotification(data["videoID"]);
-      // ignore: use_build_context_synchronously
-      showMessage(openContext, "Push通知を取り消しました.");
-    }
 
-    // 非同期処理が終わった後にUIを更新
-    setState(() {});
+  Future<void> _handleTap(Map<String, dynamic> data) async {
+    // ...（この関数は未使用なら削除してOK）...
   }
 
   Future<void> _handleTapWeb(Map<String, dynamic> data) async {
@@ -481,12 +430,12 @@ class _VideoWidgetState extends State<VideoWidget> {
       context: context,
       builder: (context) {
         return SimpleDialog(
-          title: const Text(
-              "この機能を使用するには、アプリ版をご利用ください。（Androidアプリは準備中です。）"),
+          title: const Text("この機能を使用するには、アプリ版をご利用ください。（Androidアプリは準備中です。）"),
           children: [
             SimpleDialogOption(
               onPressed: () async {
-                const String appStoreUrl = 'https://apps.apple.com/jp/app/id1611900581';
+                const String appStoreUrl =
+                    'https://apps.apple.com/jp/app/id1611900581';
                 if (await canLaunch(appStoreUrl)) {
                   await launch(appStoreUrl);
                 } else {

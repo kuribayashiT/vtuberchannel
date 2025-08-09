@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -30,8 +31,8 @@ import 'news/news.dart';
 import 'ranking.dart';
 import 'vtuberList.dart';
 import './sideMenu.dart';
+
 // import 'dart:html' as html;
-import 'package:url_launcher/url_launcher.dart';
 
 Widget topTitle = const SizedBox();
 double CupertinoTabBarHight = 0.0;
@@ -106,7 +107,7 @@ Future main() async {
         .getNotificationAppLaunchDetails();
 
     // Local Pushの監視
-    pushInstance.checkForLocalPushNotifications();
+    // pushInstance.checkForLocalPushNotifications();
     if (details != null) {
       final payload = details.notificationResponse?.payload;
       // 空文字なら何もしない
@@ -201,6 +202,7 @@ class MyHomePageState extends State<MyHomePage>
     mTitleState = Provider.of<ChangeTopTitle>(context, listen: false);
     mTitleState.addListener(_handleTopTitleChange); // リスナーを登録
     WidgetsBinding.instance.addObserver(appLifecycleObserver);
+    setupFirebaseMessagingListener();
     _pages = [
       videoDistribution(key: _globalKey),
       NewsPage(),
@@ -227,12 +229,28 @@ class MyHomePageState extends State<MyHomePage>
 
     _youtubePlayerState = YoutubePlayerState();
     fetchOldOshirase();
+
     if (kIsWeb) {
       // Webプラットフォーム向けの処理をここに書く
     } else {
       // iOSやAndroid向けの処理をここに書く
       adHelper.loadInterstitialAds();
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.payload != null && widget.payload != "") {
+        showNotificationDialog(widget.payload!);
+      }
+    });
+  }
+
+  void setupFirebaseMessagingListener() {
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      // 通知データのpayloadを取得
+      final payload = message.data['payload'] ?? '';
+      if (payload.isNotEmpty) {
+        showNotificationDialog(payload);
+      }
+    });
   }
 
   Future<void> fetchOldOshirase() async {
@@ -263,9 +281,9 @@ class MyHomePageState extends State<MyHomePage>
       Map<String, dynamic> newOshiraseJson =
           Map<String, dynamic>.from(json.decode(jsonData));
       _checkNewOshirase(newOshiraseJson);
-      if (widget.payload != "") {
-        showNotificationDialog(widget.payload!);
-      }
+      // if (widget.payload != "") {
+      //   showNotificationDialog(widget.payload!);
+      // }
     } catch (e) {
       print('Error fetching remote config: $e');
       isOshiraseUpdated = true;

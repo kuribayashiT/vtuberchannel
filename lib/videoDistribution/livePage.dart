@@ -52,15 +52,41 @@ class _LivePage extends State<LivePage> {
 
   Future<List<dynamic>> getLiveData() async {
     try {
-      final List<dynamic> fetchedCLives =
-          await GoogleCloudFunctions.getLiveData();
-      if (_isMounted) {
-        liveList = filterByOfficeIndices(
-            fetchedCLives,
-            // ignore: use_build_context_synchronously
-            Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories,
-            "video");
+      final selectedCategories =
+          Provider.of<SelectedCategorie>(context, listen: false)
+              .selectedCategories;
+      // 2つのAPIを並列取得
+      final results = await Future.wait([
+        GoogleCloudFunctions.getLiveData(),
+        GoogleCloudFunctions.getAllVideoData(),
+      ]);
+      final List<dynamic> fetchedCLives = results[0];
+      final List<dynamic> allVideos = results[1];
+
+      List<Map<String, dynamic>> liveList =
+          filterByOfficeIndices(fetchedCLives, selectedCategories, "video")
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+              .toList();
+
+      final now = DateTime.now();
+      final List<Map<String, dynamic>> extraLives =
+          filterByOfficeIndices(allVideos, selectedCategories, "video")
+              .where((data) {
+                final comparisonDayJST =
+                    DateTime.parse(data['comparisonDay']).toLocal();
+                return comparisonDayJST.isAfter(now) &&
+                    comparisonDayJST.difference(now).inMinutes <= 10;
+              })
+              .map<Map<String, dynamic>>((data) => {
+                    ...Map<String, dynamic>.from(data),
+                    'concurrent_viewers': '接続数取得中…'
+                  })
+              .toList();
+
+      for (var extra in extraLives) {
+        if (!liveList.any((d) => d['videoID'] == extra['videoID'])) {
+          liveList.add(extra);
+        }
       }
       return liveList;
     } catch (e) {
@@ -116,7 +142,7 @@ class _LivePage extends State<LivePage> {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const CuteLoadingWidget(
                 message: '配信中の動画を読み込み中…',
-                color: Color(0xFF2563EB), // Playタブ青系
+                color: Colors.blueAccent, // Playタブ青系
               );
             } else if (snapshot.hasError) {
               return Center(child: Text('Error: ${snapshot.error}'));
@@ -125,14 +151,19 @@ class _LivePage extends State<LivePage> {
               if (data.isEmpty) {
                 // 空のリストでもPullToRefreshが動作するようにする
                 return ListView(
-                  physics:
-                      const AlwaysScrollableScrollPhysics(), // PullToRefreshが可能
+                  physics: const AlwaysScrollableScrollPhysics(),
                   children: [
-                    CuteEmptyWidget(
-                      message: '配信中の動画はありません',
-                      icon: Icon(Icons.live_tv,
-                          size: 56, color: Color(0xFF2563EB)),
-                      color: Color(0xFF2563EB),
+                    SizedBox(
+                      height:
+                          MediaQuery.of(context).size.height * 0.7, // 画面の7割くらい
+                      child: const Center(
+                        child: CuteEmptyWidget(
+                          message: '配信中の動画はありません',
+                          icon: Icon(Icons.live_tv,
+                              size: 56, color: Colors.blueAccent),
+                          color: Colors.blueAccent,
+                        ),
+                      ),
                     ),
                   ],
                 );

@@ -3,44 +3,32 @@ import 'package:provider/provider.dart';
 import 'package:vtuberchannel/main.dart';
 import 'package:vtuberchannel/widgets/cute_loading_widget.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:flutter/foundation.dart' show kIsWeb; // kIsWebをimport
+import 'package:flutter/foundation.dart' show kIsWeb;
 
-/// WebViewアプリの状態を持つStatefulWidget
 String webTitle = "";
 String nowURL = "";
 
 class WebViewPage extends StatefulWidget {
-  final String url; // 追加: WebViewPageに渡すURL
-  final String title; // 追加: title
-  // コンストラクタでURLを受け取る
+  final String url;
+  final String title;
   const WebViewPage({Key? key, required this.url, required this.title})
       : super(key: key);
 
-  /// 状態オブジェクトを作成
   @override
   State<WebViewPage> createState() => _WebViewAppState();
 }
 
-/// WebViewAppの状態を管理するStateクラス
 class _WebViewAppState extends State<WebViewPage> {
-  /// WebViewControllerオブジェクト
   late final WebViewController controller;
   bool _showMiniPlayerButton = false;
   String nowVidepID = "";
   bool _isLoading = true;
-  // late html.IFrameElement _iframeElement =
-  //     html.IFrameElement(); // Webアプリ用のIFrameElement
-  // late IFrameElement _iframeElement;
 
-  /// 初期状態を設定
   @override
   void initState() {
     super.initState();
     if (!kIsWeb) {
-      controller = WebViewController()
-        ..loadRequest(
-          Uri.parse(widget.url),
-        );
+      controller = WebViewController()..loadRequest(Uri.parse(widget.url));
       controller.setJavaScriptMode(JavaScriptMode.unrestricted);
       controller.setNavigationDelegate(
         NavigationDelegate(
@@ -75,90 +63,16 @@ class _WebViewAppState extends State<WebViewPage> {
           },
         ),
       );
-    } else {
-      // // registerElement();
-      // _iframeElement = IFrameElement()
-      //   ..style.border = 'none';
-      // ui.platformViewRegistry.registerViewFactory(
-      //   'iframeElement',
-      //   (int viewId) => _iframeElement);
-      // _updateIframeUrl(widget.url);
     }
-
     webTitle = widget.title;
   }
 
-  // Widget の build メソッド内で呼び出してください
-  // void registerElement() {
-  //   html.IFrameElement iframeElement = html.IFrameElement();
-  //   iframeElement.src = widget.url;
-  //   iframeElement.style.border = 'none';
-  //   iframeElement.id = "page";
-
-  //   // 既存の iframe 要素が存在する場合は削除
-  //   var existingIframe = html.document.getElementById('page');
-  //   if (existingIframe != null) {
-  //     existingIframe.remove();
-  //   }else{
-
-  //   }
-
-  //   // WebView を表示
-  //   // setState(() {
-  //     // Widget 内に WebView を表示する方法
-  //     // html.Element? existingElement = html.document.getElementById('page');
-  //     // if (existingElement != null) {
-  //     //   existingElement.remove();
-  //     // }
-  //     // iframeElement = html.IFrameElement()
-  //     //   ..src = widget.url
-  //     //   ..style.border = 'none';
-  //   // html.document.body!.children.clear();
-  //   //     // WebView を登録
-  //   ui.platformViewRegistry.registerViewFactory(
-  //     'iframeElement',
-  //     (int viewId) => IFrameElement()
-  //     ..src = widget.url
-  //     ..style.border = 'none');
-  //   // html.document.body!.append(iframeElement);
-  //   // });
-  // }
-  @override
-  void didUpdateWidget(covariant WebViewPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.url != oldWidget.url) {
-      _updateIframeUrl(widget.url);
-    }
-  }
-
-  void _updateIframeUrl(String url) {
-    // _iframeElement.remove();
-    // setState(() {
-    //   _iframeElement.src = url;
-    // });
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-    // アプリが破棄されたときにIFrameElementを削除する
-    // _iframeElement.remove();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // IFrameElementをWebViewとしてレンダリングする
-    // html.document.body!.append(_iframeElement);
-  }
-
-  /// アプリのUIを構築
   @override
   Widget build(BuildContext context) {
     if (!kIsWeb) {
       return Scaffold(
         appBar: AppBar(
-          title: Text(webTitle),
+          title: Text(webTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: <Widget>[
             if (_showMiniPlayerButton)
               TextButton(
@@ -174,16 +88,31 @@ class _WebViewAppState extends State<WebViewPage> {
               ),
           ],
         ),
-        body: _isLoading
-            ? const Center(
-                child: CuteLoadingWidget(
-                  message: 'Webページを読み込み中…',
-                  color: Color(0xFF888888), // グレー
+        body: Stack(
+          children: [
+            WebViewWidget(controller: controller),
+            if (_isLoading)
+              Positioned(
+                top: 12,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.8),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: Colors.red,
+                      strokeWidth: 3,
+                    ),
+                  ),
                 ),
-              )
-            : WebViewWidget(
-                controller: controller,
               ),
+          ],
+        ),
       );
     } else {
       return Scaffold(
@@ -191,9 +120,7 @@ class _WebViewAppState extends State<WebViewPage> {
           title: Text(widget.title),
           actions: <Widget>[
             IconButton(
-              onPressed: () {
-                // 何かアクションを実行
-              },
+              onPressed: () {},
               icon: Icon(Icons.info),
             ),
           ],
@@ -213,34 +140,10 @@ class _WebViewAppState extends State<WebViewPage> {
   }
 
   String extractVideoId(String youtubeUrl) {
-    // YouTubeのURLからクエリパラメーターを取得
     Uri uri = Uri.parse(youtubeUrl);
     String query = uri.query;
-
-    // クエリパラメーターから'v'キーの値を取得
     Map<String, String> queryParams = Uri.splitQueryString(query);
     String? videoId = queryParams['v'];
-
-    // 取得したビデオIDを返す
     return videoId ?? '';
-  }
-}
-
-void changeWebViewUrl(String url) {
-  // WebViewのURLを変更するJavaScript関数を呼び出す
-  // html.window.postMessage({'command': 'changeUrl', 'url': url}, '*');
-}
-
-class MyWebView extends StatelessWidget {
-  final String initialUrl;
-
-  const MyWebView({Key? key, required this.initialUrl}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return HtmlElementView(
-      viewType: 'webview',
-      key: UniqueKey(), // キーを変更して再描画をトリガーする
-    );
   }
 }

@@ -216,17 +216,17 @@ class _ranking extends State<ranking>
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const CuteLoadingWidget(
                   message: 'ランキングを読み込み中…',
-                  color: Color(0xFFF59E42),
+                  color: Colors.orange,
                 );
               } else if (snapshot.hasError) {
-                return CuteEmptyWidget(
+                return const CuteEmptyWidget(
                   message: 'ランキングの取得に失敗しました',
                   icon: Icon(Icons.error_outline,
                       size: 56, color: Color(0xFFF59E42)),
                   color: Color(0xFFF59E42),
                 );
               } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return CuteEmptyWidget(
+                return const CuteEmptyWidget(
                   message: 'ランキングデータがありません',
                   icon: Icon(Icons.leaderboard,
                       size: 56, color: Color(0xFFF59E42)),
@@ -263,7 +263,7 @@ class _ranking extends State<ranking>
             color: Color(0xFFF59E42),
           );
         } else if (snapshot.hasError) {
-          return CuteEmptyWidget(
+          return const CuteEmptyWidget(
             message: 'ランキングの取得に失敗しました',
             icon: Icon(Icons.error_outline, size: 56, color: Color(0xFFF59E42)),
             color: Color(0xFFF59E42),
@@ -271,7 +271,7 @@ class _ranking extends State<ranking>
         } else {
           List<dynamic> data = snapshot.data ?? [];
           if (data.isEmpty) {
-            return CuteEmptyWidget(
+            return const CuteEmptyWidget(
               message: 'ランキングデータがありません',
               icon: Icon(Icons.leaderboard, size: 56, color: Color(0xFFF59E42)),
               color: Color(0xFFF59E42),

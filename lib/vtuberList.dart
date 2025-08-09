@@ -133,11 +133,11 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
             // ローディング中の表示
             return const CuteLoadingWidget(
               message: 'Vtuberリストを読み込み中…',
-              color: Color(0xFF8B5CF6),
+              color: Colors.purple,
             );
           } else if (snapshot.hasError) {
             // エラーが発生した場合の表示
-            return CuteEmptyWidget(
+            return const CuteEmptyWidget(
               message: 'Vtuberリストの取得に失敗しました',
               icon:
                   Icon(Icons.error_outline, size: 56, color: Color(0xFF8B5CF6)),
@@ -146,7 +146,7 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
           } else {
             // データが揃った場合の表示
             if (tabs == null || tabs!.isEmpty) {
-              return CuteEmptyWidget(
+              return const CuteEmptyWidget(
                 message: 'Vtuberリストがありません',
                 icon:
                     Icon(Icons.person_off, size: 56, color: Color(0xFF8B5CF6)),

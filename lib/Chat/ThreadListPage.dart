@@ -13,44 +13,46 @@ class ThreadListPage extends StatefulWidget {
 
 class _ThreadListPageState extends State<ThreadListPage>
     with TickerProviderStateMixin {
-  // UI制御
+  final DatabaseReference officeMappingRef =
+      FirebaseDatabase.instance.ref('officeMapping');
+  Map<String, dynamic>? cachedOfficeMapping;
   TabController? _tabController;
   final TextEditingController postController = TextEditingController();
   final FocusNode _postFocusNode = FocusNode();
   String? selectedThreadId;
   List<String> filteredOfficeList = [];
-  // クラスメンバに追加
   Set<String> initializedOffices = {};
-  // データ管理
   List<String> officeList = [];
   Map<String, String> officeIcons = {};
   final Map<String, List<String>> officeThreadsMap = {};
-  // Map<String, List<Map<String, dynamic>>> threadPosts = {};
-  List<Map<String, dynamic>> posts = [];
-
-  // その他
   late SelectedCategorie serectedOffice;
 
   void _onDataUpdated() => setState(() {});
 
   Future<void> _fetchOfficeData() async {
-    final ref = FirebaseDatabase.instance.ref('officeMapping');
-    final snapshot = await ref.get();
-    List<String> offices = [];
-    if (snapshot.exists) {
-      final data = Map<String, dynamic>.from(snapshot.value as Map);
-      offices = data.values.map((v) => v.toString()).toList();
+    if (cachedOfficeMapping == null) {
+      final snapshot = await officeMappingRef.get();
+      if (snapshot.exists) {
+        cachedOfficeMapping = Map<String, dynamic>.from(snapshot.value as Map);
+      }
+      if (cachedOfficeMapping != null) {
+        final offices =
+            cachedOfficeMapping!.values.map((v) => v.toString()).toList();
+        setState(() => officeList = offices);
+        await _fetchThreads();
+      }
     }
-    setState(() => officeList = offices);
-    await _fetchThreads();
   }
 
   Future<Map<String, String>> fetchOfficeMapping() async {
-    final ref = FirebaseDatabase.instance.ref('officeMapping');
-    final snapshot = await ref.get();
-    if (snapshot.exists) {
-      final data = Map<String, dynamic>.from(snapshot.value as Map);
-      return data.map((k, v) => MapEntry(k, v.toString()));
+    if (cachedOfficeMapping == null) {
+      final snapshot = await officeMappingRef.get();
+      if (snapshot.exists) {
+        cachedOfficeMapping = Map<String, dynamic>.from(snapshot.value as Map);
+      }
+    }
+    if (cachedOfficeMapping != null) {
+      return cachedOfficeMapping!.map((k, v) => MapEntry(k, v.toString()));
     }
     return {};
   }
@@ -63,13 +65,10 @@ class _ThreadListPageState extends State<ThreadListPage>
         Provider.of<SelectedCategorie>(context, listen: false);
     final List<String> categoriesOrder =
         selectedCategorieProvider.categoriesOrder;
-    // officeThreadsMapをcategoriesOrder順で初期化
     for (var office in categoriesOrder) {
       officeThreadsMap[office] = [];
-      // 初期化前に削除
       initializedOffices.remove(office);
     }
-
     for (var doc in threadsSnapshot.docs) {
       final threadId = doc.id;
       final threadData = doc.data();
@@ -79,7 +78,6 @@ class _ThreadListPageState extends State<ThreadListPage>
       if (officeThreadsMap.containsKey(officeName)) {
         officeThreadsMap[officeName]!.add(threadId);
       }
-      await _fetchPostsForThread(threadId);
     }
     final selectedOfficeData =
         selectedCategorieProvider.selectedCategories.toList();
@@ -88,8 +86,9 @@ class _ThreadListPageState extends State<ThreadListPage>
     }
     setState(() {
       if (selectedOfficeData.isNotEmpty) {
+        _tabController?.dispose();
         _tabController = TabController(
-          length: selectedOfficeData.length,
+          length: selectedOfficeData.length + 1, // +1 for rules tab
           vsync: this,
         )..addListener(() {
             _updateSelectedThreads(_tabController!.index);
@@ -97,9 +96,6 @@ class _ThreadListPageState extends State<ThreadListPage>
         _updateSelectedThreads(0);
       }
     });
-    print('officeThreadsMap: $officeThreadsMap');
-    print('filteredOfficeList: $filteredOfficeList');
-    print('TabController length: ${_tabController?.length}');
   }
 
   void _updateSelectedThreads(int tabIndex) {
@@ -107,7 +103,14 @@ class _ThreadListPageState extends State<ThreadListPage>
         Provider.of<SelectedCategorie>(context, listen: false);
     final List<String> categoriesOrder =
         selectedCategorieProvider.categoriesOrder;
-    final office = categoriesOrder[tabIndex];
+    // 0番目はルールタブ
+    if (tabIndex == 0) {
+      setState(() {
+        selectedThreadId = null;
+      });
+      return;
+    }
+    final office = categoriesOrder[tabIndex - 1];
     setState(() {
       selectedThreadId = officeThreadsMap[office]?.isNotEmpty == true
           ? officeThreadsMap[office]!.first
@@ -124,8 +127,16 @@ class _ThreadListPageState extends State<ThreadListPage>
   }
 
   @override
+  void dispose() {
+    _tabController?.dispose();
+    serectedOffice.removeListener(_onDataUpdated);
+    postController.dispose();
+    _postFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // 選択中のオフィスを取得
     final selectedCategorieProvider =
         Provider.of<SelectedCategorie>(context, listen: true);
     final List<String> selectedOfficeData =
@@ -139,27 +150,22 @@ class _ThreadListPageState extends State<ThreadListPage>
       filteredOfficeList =
           categoriesOrder.isNotEmpty ? categoriesOrder : officeList;
     } else {
-      // 選択されたカテゴリをcategoriesOrder順で並び替え
       filteredOfficeList = categoriesOrder
           .where((cat) => selectedOfficeData.contains(cat))
           .toList();
     }
-    print(
-        'build: filteredOfficeList=$filteredOfficeList, officeThreadsMap=$officeThreadsMap');
-    //
+
     if (categoriesOrder.isEmpty) {
       return const Scaffold(
         body: CuteLoadingWidget(
           message: 'スレッドを読み込み中…',
-          color: Color(0xFFF472B6),
+          color: Colors.teal,
         ),
       );
     }
 
-    // "掲示板ルール" タブを含めた新しいリストを作成
     final List<String> tabList = ["📢 掲示板ルール", ...filteredOfficeList];
 
-    // TabControllerが未初期化なら初期化
     if (_tabController == null || _tabController!.length != tabList.length) {
       _tabController?.dispose();
       _tabController = TabController(
@@ -169,15 +175,7 @@ class _ThreadListPageState extends State<ThreadListPage>
       _tabController!.addListener(() {
         _updateSelectedThreads(_tabController!.index);
       });
-      // ここで一度選択状態を更新
       _updateSelectedThreads(_tabController!.index);
-      // TabController初期化直後はリビルドが必要
-      return const Scaffold(
-        body: CuteLoadingWidget(
-          message: 'スレッドを読み込み中…',
-          color: Color(0xFFF472B6),
-        ),
-      );
     }
 
     return DefaultTabController(
@@ -236,14 +234,15 @@ class _ThreadListPageState extends State<ThreadListPage>
                   if (!isOfficeThreadsReady) {
                     return const CuteLoadingWidget(
                       message: 'スレッドを読み込み中…',
-                      color: Color(0xFFF472B6),
+                      color: Colors.teal,
                     );
                   }
                   return threadId != null
                       ? _buildPostList(threadId)
                       : Column(
                           children: [
-                            Expanded(child: Center(child: Text('スレッドがありません'))),
+                            const Expanded(
+                                child: Center(child: Text('スレッドがありません'))),
                             Padding(
                               padding: EdgeInsets.only(
                                 bottom:
@@ -283,38 +282,28 @@ class _ThreadListPageState extends State<ThreadListPage>
             .toList());
   }
 
-// 新規: 投稿一覧（選択中スレッド）
   Widget _buildPostList(String threadId) {
     return StreamBuilder<List<Map<String, dynamic>>>(
         stream: getPostStream(threadId),
         builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.active) {
-            // データが完全に揃うまではローディングのみ
-            return const CuteLoadingWidget(
-              message: '投稿を読み込み中…',
-              color: Color(0xFFF472B6),
-            );
-          }
           if (!snapshot.hasData || snapshot.data == null) {
-            // データがまだ来ていない場合もローディング
             return const CuteLoadingWidget(
               message: '投稿を読み込み中…',
-              color: Color(0xFFF472B6),
+              color: Colors.teal,
             );
           }
           final posts = snapshot.data!;
           if (posts.isEmpty) {
-            // データ取得後に投稿が0件なら「スレッドがありません」View
             return Column(
               children: [
-                Expanded(child: Center(child: Text('スレッドがありません'))),
+                const Expanded(child: Center(child: Text('スレッドがありません'))),
                 Padding(
                   padding: EdgeInsets.only(
                     bottom: MediaQuery.of(context).viewInsets.bottom + 8,
                     left: 8,
                     right: 8,
                   ),
-                  child: _buildPostForm(null, isNewThread: true),
+                  child: _buildPostForm(threadId, isNewThread: true),
                 ),
               ],
             );
@@ -330,7 +319,6 @@ class _ThreadListPageState extends State<ThreadListPage>
             }
           }
 
-          // 2. 親ごとに「自分＋子孫の中で一番新しいcreatedAt」を計算
           DateTime getLatestDate(Map<String, dynamic> parent) {
             DateTime latest = _getCreatedAt(parent);
             void dfs(Map<String, dynamic> node) {
@@ -348,11 +336,9 @@ class _ThreadListPageState extends State<ThreadListPage>
             return latest;
           }
 
-          // 3. 親ポストを最新投稿日時順（降順）でソート
           parentPosts
               .sort((a, b) => getLatestDate(b).compareTo(getLatestDate(a)));
 
-          // 4. ツリーを再帰的にWidget化
           List<Widget> postWidgets = [];
           for (var parent in parentPosts) {
             postWidgets.addAll(_buildPostTreeGrouped(parent, childrenMap, 0));
@@ -383,7 +369,6 @@ class _ThreadListPageState extends State<ThreadListPage>
     Map<int, List<Map<String, dynamic>>> childrenMap,
     int indentLevel,
   ) {
-    // 再帰的に親＋子孫をリスト化
     List<Widget> _buildChildren(Map<String, dynamic> node, int level) {
       final nodeNo = node['postNo'];
       final nodeTimestamp = node['createdAt'] as Timestamp?;
@@ -461,7 +446,6 @@ class _ThreadListPageState extends State<ThreadListPage>
     ];
   }
 
-  // 投稿のcreatedAtをDateTimeで取得
   DateTime _getCreatedAt(Map<String, dynamic> post) {
     final createdAt = post['createdAt'];
     if (createdAt is Timestamp) {
@@ -470,48 +454,9 @@ class _ThreadListPageState extends State<ThreadListPage>
     return DateTime(0);
   }
 
-  /// 返信表示用ウィジェット
-
-  Map<String, dynamic>? findTopParentBeforeZero(
-      List<Map<String, dynamic>> posts, int parentNo) {
-    List<Map<String, dynamic>> filteredPosts =
-        posts.where((post) => post['postNo'] == parentNo).toList();
-
-    if (filteredPosts.isEmpty) {
-      return null; // 投稿が見つからない場合
-    }
-
-    Map<String, dynamic> currentPost = filteredPosts.first;
-
-    // 次の親投稿が0なら、この投稿が直前の親投稿
-    if (currentPost['parentNo'] == 0) {
-      return null; // parentNo == 0 の場合は直前なし
-    }
-
-    // ここで次の親投稿を取得
-    List<Map<String, dynamic>> nextParentPosts = posts
-        .where((post) => post['postNo'] == currentPost['parentNo'])
-        .toList();
-
-    if (nextParentPosts.isEmpty) {
-      return currentPost; // もし次の親投稿が存在しなければ直前の親投稿として返す
-    }
-
-    Map<String, dynamic> nextParentPost = nextParentPosts.first;
-
-    if (nextParentPost['parentNo'] == 0) {
-      return currentPost; // 次の親投稿が 0 なら現在の投稿が直前の親投稿
-    }
-
-    // さらに親投稿を再帰的に探す
-    return findTopParentBeforeZero(posts, currentPost['parentNo']);
-  }
-
   Widget _buildPostForm(String? threadId,
       {bool isNewThread = false, String? officeName}) {
     if (_tabController == null) return SizedBox();
-
-    final TextEditingController titleController = TextEditingController();
 
     if (isNewThread) {
       return Padding(
@@ -519,13 +464,8 @@ class _ThreadListPageState extends State<ThreadListPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('新規スレッドを作成', style: TextStyle(fontWeight: FontWeight.bold)),
-            // const SizedBox(height: 8),
-            // TextField(
-            //   controller: titleController,
-            //   maxLength: 40,
-            //   decoration: InputDecoration(labelText: 'スレッドタイトル'),
-            // ),
+            const Text('新規スレッドを作成',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             TextField(
               focusNode: _postFocusNode,
@@ -537,20 +477,33 @@ class _ThreadListPageState extends State<ThreadListPage>
             ),
             const SizedBox(height: 8),
             ElevatedButton.icon(
-              icon: Icon(Icons.add),
-              label: Text('スレッド作成'),
+              icon: const Icon(Icons.add),
+              label: const Text('スレッド作成'),
               onPressed: () async {
-                final title = titleController.text.trim();
                 final content = postController.text.trim();
-                if (title.isEmpty || content.isEmpty) {
+                if (content.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('タイトルと本文を入力してください')),
+                    const SnackBar(content: Text('本文を入力してください')),
                   );
                   return;
                 }
-                await _createNewThread(officeName ?? '', title, content);
-                titleController.clear();
+                String? useThreadId = threadId;
+                if (useThreadId == null && officeName != null) {
+                  final threadIdList = officeThreadsMap[officeName] ?? [];
+                  if (threadIdList.isNotEmpty) {
+                    useThreadId = threadIdList.first;
+                  }
+                }
+                if (useThreadId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('スレッドIDが取得できませんでした')),
+                  );
+                  return;
+                }
+                const userName = "";
                 postController.clear();
+                await addPost(useThreadId, content, userName);
+                await _fetchThreads();
               },
             ),
           ],
@@ -558,7 +511,6 @@ class _ThreadListPageState extends State<ThreadListPage>
       );
     }
 
-    // 既存スレッド用フォーム（元の内容）
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Column(
@@ -601,124 +553,28 @@ class _ThreadListPageState extends State<ThreadListPage>
     );
   }
 
-  Future<void> _createNewThread(
-      String office, String title, String content) async {
-    try {
-      final threadsCollection =
-          FirebaseFirestore.instance.collection('threads');
-      final postsCollection = FirebaseFirestore.instance.collection('posts');
-      final newThreadRef = threadsCollection.doc();
-      await newThreadRef.set({
-        'office': office,
-        'title': title,
-        'lastUpdated': FieldValue.serverTimestamp(),
-      });
-      await postsCollection.add({
-        'threadId': newThreadRef.id,
-        'content': content,
-        'author': '',
-        'postNo': 1,
-        'parentNo': 0,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('スレッドを作成しました')),
-      );
-      await _fetchThreads();
-    } catch (e) {
-      print('Error creating thread: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('スレッド作成に失敗しました')),
-      );
-    }
-  }
-
-  /// 各スレッドの投稿を取得
-  Future<void> _fetchPostsForThread(String threadId) async {
-    try {
-      final postsSnapshot = await FirebaseFirestore.instance
-          .collection('posts')
-          .where('threadId', isEqualTo: threadId)
-          .orderBy('createdAt', descending: false)
-          .get();
-
-      posts = postsSnapshot.docs.map((doc) => doc.data()).toList();
-
-      // setState(() {
-      //   threadPosts[threadId] = posts;
-      // });
-    } catch (e) {
-      print('Error fetching posts for thread $threadId: $e');
-    }
-  }
-
-  //==============================
-  // post整理のためのメソッド
-  //==============================
   Future<void> addPost(
       String threadId, String content, String authorName) async {
     FocusScope.of(context).unfocus();
     try {
-      // ここで最新のpostsリストを取得
-      final postsSnapshot = await FirebaseFirestore.instance
-          .collection('posts')
-          .where('threadId', isEqualTo: threadId)
-          .orderBy('createdAt', descending: false)
-          .get();
-      posts = postsSnapshot.docs.map((doc) => doc.data()).toList();
       final postCollection = FirebaseFirestore.instance.collection('posts');
       final newPostRef = postCollection.doc();
       final postCountSnapshot =
           await postCollection.where('threadId', isEqualTo: threadId).get();
 
-      // 最上位の親を再帰的に探す
-      int findRootParent(int postNo) {
-        final parent = posts.firstWhere(
-          (post) => post['postNo'] == postNo,
-          orElse: () => <String, dynamic>{}, // 型付き空Map
-        );
-
-        if (parent.isEmpty) {
-          return postNo; // 投稿が見つからない場合は自分自身を返す
-        }
-
-        final anchorMatches = RegExp(r'>>(\d+)').allMatches(parent["content"]);
-        if (anchorMatches.isEmpty) {
-          return postNo; // もう親がない → 最上位の親
-        }
-        final match = anchorMatches.first;
-
-        // 再帰的に親をたどる
-        return findRootParent(int.tryParse(match.group(1)!)!);
-      }
-
       int parentNo = 0;
       final anchorMatches = RegExp(r'>>(\d+)').allMatches(content);
       List<int> anchorNumbers = [];
-
-      // 🔍 全アンカーを抽出
       for (final match in anchorMatches) {
         final anchorNo = int.tryParse(match.group(1)!);
         if (anchorNo != null) {
-          final anchorPost = posts.firstWhere(
-            (post) => post['postNo'] == anchorNo,
-            orElse: () => <String, dynamic>{},
-          );
-
-          if (anchorPost.isNotEmpty) {
-            // 🔥 ここで最上位の親をたどってからリストに追加
-            final rootParent = findRootParent(anchorNo);
-            anchorNumbers.add(rootParent);
-          }
+          anchorNumbers.add(anchorNo);
         }
       }
-
       if (anchorNumbers.isNotEmpty) {
-        // 最小番号の親を採用
         parentNo = anchorNumbers.reduce((a, b) => a < b ? a : b);
       }
 
-      // Firestoreに登録
       await newPostRef.set({
         'threadId': threadId,
         'content': content,
@@ -728,15 +584,12 @@ class _ThreadListPageState extends State<ThreadListPage>
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // スレッドの最終更新日時を更新
       await FirebaseFirestore.instance
           .collection('threads')
           .doc(threadId)
           .update({
         'lastUpdated': FieldValue.serverTimestamp(),
       });
-
-      print("Post added successfully");
     } catch (e) {
       print('Error adding post: $e');
     }
@@ -777,9 +630,7 @@ class _ThreadListPageState extends State<ThreadListPage>
               color: Colors.blue, decoration: TextDecoration.underline),
           recognizer: TapGestureRecognizer()
             ..onTap = () {
-              // if (postNo != null) {
-              //   _scrollToPost(postNo);
-              // }
+              // アンカークリック時の処理（必要なら実装）
             },
         ),
       );
@@ -794,7 +645,6 @@ class _ThreadListPageState extends State<ThreadListPage>
     return spans;
   }
 
-  /// 📢 掲示板ルールページのウィジェット
   Widget _buildRulesPage() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -838,7 +688,6 @@ class _ThreadListPageState extends State<ThreadListPage>
     );
   }
 
-  /// 📌 ルール項目のウィジェット
   Widget _buildRuleItem(String title, String description) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),

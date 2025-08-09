@@ -148,17 +148,20 @@ class _PastLive extends State<PastLive>
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const CuteLoadingWidget(
-                  message: 'アーカイブを読み込み中…', color: Color(0xFF2563EB));
+                  message: 'アーカイブを読み込み中…', color: Colors.blueAccent);
             } else if (snapshot.hasError) {
               return Center(child: Text('Error: ${snapshot.error}'));
             } else {
               List<dynamic> data = snapshot.data!;
               if (data.isEmpty) {
-                return CuteEmptyWidget(
+                return const Center(
+                  child: CuteEmptyWidget(
                     message: '配信済みの動画はありません',
-                    icon: const Icon(Icons.video_library,
-                        size: 56, color: Color(0xFF2563EB)),
-                    color: const Color(0xFF2563EB));
+                    icon: Icon(Icons.video_library,
+                        size: 56, color: Colors.blueAccent),
+                    color: Colors.blueAccent,
+                  ),
+                );
               } else {
                 try {
                   if (row > 1) {
@@ -202,11 +205,14 @@ class _PastLive extends State<PastLive>
                   }
                   // ignore: unused_catch_stack
                 } catch (e, stackTrace) {
-                  return CuteEmptyWidget(
-                      message: '動画の読み込みに失敗しました',
-                      icon: const Icon(Icons.error_outline,
-                          size: 56, color: Color(0xFF2563EB)),
-                      color: const Color(0xFF2563EB));
+                  return const Center(
+                    child: CuteEmptyWidget(
+                      message: '配信済みの動画はありません',
+                      icon: Icon(Icons.video_library,
+                          size: 56, color: Colors.blueAccent),
+                      color: Colors.blueAccent,
+                    ),
+                  );
                 }
               }
             }
