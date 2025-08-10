@@ -69,25 +69,28 @@ class _LivePage extends State<LivePage> {
               .toList();
 
       final now = DateTime.now();
+      final fiveMinBefore = now.subtract(const Duration(minutes: 5));
+      final fiveMinAfter = now.add(const Duration(minutes: 5));
+
       final List<Map<String, dynamic>> extraLives =
           filterByOfficeIndices(allVideos, selectedCategories, "video")
               .where((data) {
                 final comparisonDayJST =
                     DateTime.parse(data['comparisonDay']).toLocal();
-                return comparisonDayJST.isAfter(now) &&
-                    comparisonDayJST.difference(now).inMinutes <= 10;
+                // 前後5分以内
+                return comparisonDayJST.isAfter(fiveMinBefore) &&
+                    comparisonDayJST.isBefore(fiveMinAfter);
               })
               .map<Map<String, dynamic>>((data) => {
                     ...Map<String, dynamic>.from(data),
                     'concurrent_viewers': '接続数取得中…'
                   })
+              .where((data) =>
+                  !liveList.any((d) => d['videoID'] == data['videoID'])) // 重複除外
               .toList();
 
-      for (var extra in extraLives) {
-        if (!liveList.any((d) => d['videoID'] == extra['videoID'])) {
-          liveList.add(extra);
-        }
-      }
+      liveList.addAll(extraLives);
+
       return liveList;
     } catch (e) {
       print('Error fetching data: $e');
