@@ -3,18 +3,27 @@ function getSelectedOffice() {
     const selectedPanel = document.querySelector('.office-panel-cute.selected');
     console.log('[getSelectedOffice] selectedPanel:', selectedPanel);
 
-    if (!selectedPanel) return '';
-    let office = selectedPanel.getAttribute('data-office');
-    if (!office) return '';
-    if (office === 'other') {
-        const customOffice = document.getElementById('customOffice');
-        if (customOffice && typeof customOffice.value === 'string' && customOffice.value.trim()) {
-            return customOffice.value.trim();
-        }
-        // customOfficeがnull/undefined/空の場合は空文字を返す
-        return '';
+    if (!selectedPanel) {
+        console.log('[getSelectedOffice] return: (no selectedPanel) null');
+        return null;
     }
-    return office || '';
+    let office = selectedPanel.getAttribute('data-office');
+    console.log('[getSelectedOffice] data-office:', office);
+    if (!office) {
+        console.log('[getSelectedOffice] return: (no office) null');
+        return null;
+    }
+    if (office === 'other') {
+        const customOfficeKey = document.getElementById('customOfficeKey');
+        if (customOfficeKey && typeof customOfficeKey.value === 'string' && customOfficeKey.value.trim()) {
+            console.log('[getSelectedOffice] return: customOfficeKey', customOfficeKey.value.trim());
+            return customOfficeKey.value.trim();
+        }
+        console.log('[getSelectedOffice] return: (other, no customOfficeKey) null');
+        return null;
+    }
+    console.log('[getSelectedOffice] return:', office);
+    return office;
 }
 // シンプルな進捗表示用ダミー関数（未定義エラー対策）
 function showProgress(show, percent) {
@@ -303,7 +312,6 @@ async function importData() {
         showProgress(false);
     }
 }
-// 新規VTuber登録フォームのバリデーションと送信
 async function handleAddVtuber(event) {
     event.preventDefault();
     const channelId = document.getElementById('channelId').value.trim();
@@ -313,38 +321,43 @@ async function handleAddVtuber(event) {
     let office = getSelectedOffice();
     let customOfficeKey = '';
     let customOfficeName = '';
-    if (office === 'other') {
-        // カスタム事務所名入力欄から値を取得
-        customOfficeKey = document.getElementById('customOfficeKey').value.trim();
+
+    // 既存office一覧を取得（window.officeListはloadOfficeOptionsでセットされる想定）
+    let officeArr = Array.isArray(window.officeList) ? window.officeList : [];
+    // 「その他」ではなく、officeArrに含まれていない場合＝新規事務所
+    if (office && !officeArr.includes(office)) {
+        customOfficeKey = office;
         customOfficeName = document.getElementById('customOfficeDisplayName').value.trim();
         if (!customOfficeKey || !customOfficeName) {
             showStatus('❌ 新しい事務所のKeyと表示名を入力してください。', 'error');
             return false;
         }
-        // 事務所Keyの重複チェック
-        const officeListRes = await fetch('https://vtuber-335811-default-rtdb.firebaseio.com/office.json');
-        const officeList = await officeListRes.json();
-        if (Array.isArray(officeList) && officeList.includes(customOfficeKey)) {
-            showStatus('❌ その事務所Keyは既に存在します。', 'error');
+        // Cloud Functions経由で事務所追加
+        try {
+            const addOfficeRes = await fetch('https://us-central1-vtuber-335811.cloudfunctions.net/addOffice', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ officeKey: customOfficeKey, officeName: customOfficeName })
+            });
+            if (!addOfficeRes.ok) {
+                const errText = await addOfficeRes.text();
+                console.log('addOffice API error:', errText);
+                showStatus('❌ 事務所の追加APIに失敗しました', 'error');
+                return false;
+            }
+            const addOfficeResult = await addOfficeRes.json();
+            if (!addOfficeResult.success) {
+                showStatus('❌ 事務所の追加APIでエラーが発生しました', 'error');
+                return false;
+            }
+        } catch (e) {
+            showStatus('❌ 事務所の追加API通信エラー', 'error');
             return false;
         }
-        // 事務所配列に追加
-        await fetch('https://vtuber-335811-default-rtdb.firebaseio.com/office.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify([...(officeList || []), customOfficeKey])
-        });
-        // officeMappingに追加
-        const mappingRes = await fetch('https://vtuber-335811-default-rtdb.firebaseio.com/officeMapping.json');
-        const mapping = await mappingRes.json();
-        mapping[customOfficeKey] = customOfficeName;
-        await fetch('https://vtuber-335811-default-rtdb.firebaseio.com/officeMapping.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(mapping)
-        });
+        // office変数を新規keyで上書き
         office = customOfficeKey;
     }
+
     console.log('[handleAddVtuber] getSelectedOffice()直後:', office, typeof office);
     if (!office || office === '') {
         showStatus('❌ 事務所は必須項目です。必ず1つ選択してください。', 'error');
@@ -861,20 +874,26 @@ async function validateAndConvertChannelId() {
     statusDiv.innerHTML = '<span style="color: red;">❌ 無効な形式です（チャンネルIDまたは@ハンドル名を入力してください）</span>';
 }
 
-// 事務所選択機能
 function selectOffice(officeName) {
     selectedOffice = officeName;
     console.log('[selectOffice] 選択事務所:', officeName);
 
     // すべてのパネルの選択状態をリセット
-    document.querySelectorAll('.office-panel-cute').forEach(panel => {
+    const allPanels = document.querySelectorAll('.office-panel-cute');
+    console.log('[selectOffice] 全パネル数:', allPanels.length);
+    allPanels.forEach((panel, idx) => {
+        if (panel.classList.contains('selected')) {
+            console.log(`[selectOffice] リセット前 selectedパネル[${idx}]:`, panel.getAttribute('data-office'));
+        }
         panel.classList.remove('selected');
     });
 
     // 選択されたパネルを強調
     let selectedPanel = document.querySelector(`.office-panel-cute[data-office="${officeName}"]`);
+    console.log('[selectOffice] 選択対象 selectedPanel:', selectedPanel);
     if (!selectedPanel) {
         selectedPanel = document.querySelector('.office-panel-cute');
+        console.log('[selectOffice] フォールバック selectedPanel:', selectedPanel);
         if (selectedPanel) {
             selectedPanel.classList.add('selected');
             selectedOffice = selectedPanel.getAttribute('data-office');
@@ -883,9 +902,15 @@ function selectOffice(officeName) {
         selectedPanel.classList.add('selected');
     }
 
+    // 選択後の全パネルのselected状態を確認
+    document.querySelectorAll('.office-panel-cute').forEach((panel, idx) => {
+        if (panel.classList.contains('selected')) {
+            console.log(`[selectOffice] 選択後 selectedパネル[${idx}]:`, panel.getAttribute('data-office'));
+        }
+    });
+
     // ここでgetSelectedOffice()を呼ぶと、selectedクラスが付与された直後なのでOK
     console.log('[selectOffice] getSelectedOffice():New', getSelectedOffice());
-    console.log('[selectOffice] getSelectedOffice():', getSelectedOffice());
 
     // カスタム事務所名の表示/非表示
     toggleCustomOffice(selectedOffice);
@@ -1633,16 +1658,6 @@ async function bulkAddVtubers() {
     }
 }
 
-// 選択された事務所を取得
-function getSelectedOffice() {
-    const selectedRadio = document.querySelector('input[name="office"]:checked');
-    if (!selectedRadio) return null;
-
-    if (selectedRadio.value === 'custom') {
-        return document.getElementById('customOffice').value.trim();
-    }
-    return selectedRadio.value;
-}
 
 // Auto Discover機能
 

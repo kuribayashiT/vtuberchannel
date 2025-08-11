@@ -1414,6 +1414,47 @@ exports.scheduledRealTimeDBToYoutubeData = functions
   }
 );
 
+// 事務所追加API
+exports.addOffice = functions.https.onRequest(async (req, res) => {
+  // CORSヘッダーを常にセット
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Max-Age', '3600');
+  if (req.method === 'OPTIONS') {
+    // プリフライトリクエストにはヘッダーのみ返す
+    return res.status(204).send('');
+  }
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  try {
+    const { officeKey, officeName } = req.body;
+    if (!officeKey || !officeName) {
+      return res.status(400).json({ error: 'officeKey and officeName are required' });
+    }
+    // office.json（配列）に追加
+    const officeRef = db.ref('office');
+    const snapshot = await officeRef.once('value');
+    let arr = [];
+    if (Array.isArray(snapshot.val())) {
+      arr = snapshot.val();
+    } else if (typeof snapshot.val() === 'object' && snapshot.val() !== null) {
+      arr = Object.values(snapshot.val()).filter(v => typeof v === 'string');
+    }
+    if (!arr.includes(officeKey)) {
+      arr.push(officeKey);
+      await officeRef.set(arr);
+    }
+    // officeMapping.json（object）に追加
+    const mappingRef = db.ref('officeMapping');
+    await mappingRef.update({ [officeKey]: officeName });
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('addOffice error:', err);
+    res.status(500).json({ error: 'Failed to add office' });
+  }
+});
 // ================================================  
 //  RSSからNewsデータ作成
 //  scheduled every 1 hours
