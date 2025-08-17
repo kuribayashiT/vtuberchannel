@@ -1483,6 +1483,27 @@ exports.scheduledNewsUpdate = functions.pubsub
         if (i < 3) console.log(`[scheduledNewsUpdate] sample article[${i}]:`, a.title, a.publishedAt);
       });
       allArticles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+
+      // ★★ ここから videoUrlMap.json 参照による videoUrl 付与処理 ★★
+      let videoUrlMap = {};
+      try {
+        const videoUrlMapFile = storage.bucket('vtuber-335811.appspot.com').file('videoUrlMap.json');
+        const [contents] = await videoUrlMapFile.download();
+        videoUrlMap = JSON.parse(contents.toString());
+        console.log('[scheduledNewsUpdate] videoUrlMap.json loaded:', Object.keys(videoUrlMap).length);
+      } catch (err) {
+        console.log('[scheduledNewsUpdate] videoUrlMap.json not found or empty, skip merge');
+        videoUrlMap = {};
+      }
+
+      // 記事URLが一致するものにvideoUrlを付与
+      allArticles.forEach(article => {
+        if (videoUrlMap[article.url]) {
+          article.videoUrl = videoUrlMap[article.url];
+        }
+      });
+      // ★★ ここまで videoUrlMap.json 参照による videoUrl 付与処理 ★★
+
       // ファイルデータをメモリ内に書き込む
       const bucket = storage.bucket('vtuber-335811.appspot.com');
       const fileName = 'news.json';
@@ -1510,7 +1531,6 @@ exports.scheduledNewsUpdate = functions.pubsub
     }
     console.log('[scheduledNewsUpdate] end');
   });
-
 
 // ================================================  
 // All Video List取得処理の定義
@@ -1891,140 +1911,8 @@ async function fetchFeed(feedUrl, allArticles) {
 
 
 // ==============================================================================  
-// 共通関数の定義
+// 動画生成の定義
 // ==============================================================================
-// const openai = new OpenAI({
-//   apiKey: functions.config().openai.api_key, // Firebase環境変数からAPIキーを取得
-// });
-// // メイン関数（Cloud Function）
-// exports.generateBlogFromLatestNews = async (req, res) => {
-//   try {
-//     const feed = await parser.parseURL('https://vtuber-matomeruyon.blog.jp/index.rdf');
-//     const latestItem = feed.items[0];
-
-//     const prompt = `以下のタイトルに基づいて、ブログ記事を800文字程度で生成してください。\n\nタイトル: ${latestItem.title}`;
-//     const completion = await openai.chat.completions.create({
-//       model: 'gpt-3.5-turbo',
-//       messages: [{ role: 'user', content: prompt }],
-//       temperature: 0.7,
-//     });
-
-//     const blogText = completion.choices[0].message.content;
-//     res.status(200).send(blogText);
-//   } catch (error) {
-//     console.error('Error:', error);
-//     res.status(500).send('Error generating blog.');
-//   }
-// };
-// メイン関数（Cloud Function）
-// import { generateSRTFromVoicevoxTiming } from './video-merger/utils/generateSRTFromVoicevoxTiming.js';
-// exports.generateBlogFromLatestNews = async (req, res) => {
-//   try {
-//     const feed = await parser.parseURL('https://vtuber-matomeruyon.blog.jp/index.rdf');
-//     const latestItem = feed.items[0];
-//     const title = latestItem.title;
-
-//     const prompt = `以下のタイトルに基づいて、ブログ記事を600文字程度で、SNSなどの反応も交えて生成してください。\n\nタイトル: ${title}`;
-//     const completion = await openai.chat.completions.create({
-//       model: 'gpt-3.5-turbo',
-//       messages: [{ role: 'user', content: prompt }],
-//       temperature: 0.7,
-//     });
-
-//     const blogText = completion.choices[0].message.content;
-//     const VOICEVOX_ENGINE_URL = 'https://voicevox-engine-xxxx.a.run.app';
-//     const speakerId = 1;
-
-//     const queryRes = await axios.post(
-//       `${VOICEVOX_ENGINE_URL}/audio_query?text=${encodeURIComponent(blogText)}&speaker=${speakerId}`,
-
-//     // ✅ 動画合成サービスを呼び出し（Cloud Run）
-//     const mergeResponse = await axios.post('https://video-merger-xxxx.a.run.app/merge', {
-//       videoUri: 'gs://your-bucket/input/background.mp4',
-//       audioUri: `gs://${bucketName}/${gcsAudioUri}`,
-//       subtitleSrtUri: `gs://${bucketName}/${gcsSrtUri}`,
-//       outputUri: `generated/output/output-${Date.now()}.mp4`,
-//     });
-
-//     res.json({
-//       message: '🎉 動画生成成功',
-//       outputVideoUri: mergeResponse.data.outputUri,
-//     });
-
-//   } catch (error) {
-//     console.error('🔥 処理失敗:', error?.response?.data || error);
-//     res.status(500).send('動画生成に失敗しました。');
-//   }
-// };
-
-
-// // メイン関数（Cloud Function）
-// exports.generateBlogVideoFromLatestNews = async (req, res) => {
-//   try {
-//     // RSSフィードを解析して最新ニュースを取得
-//     const feed = await parser.parseURL('https://vtuber-matomeruyon.blog.jp/index.rdf');
-//     const latestItem = feed.items[0];
-//     const title = latestItem.title;
-
-//     // ChatGPTでブログ生成
-//     const prompt = `以下のタイトルに基づいて、ブログ記事を600文字程度で、SNSなどの反応も交えて生成してください。\n\nタイトル: ${title}`;
-//     const completion = await openai.chat.completions.create({
-//       model: 'gpt-3.5-turbo',
-//       messages: [{ role: 'user', content: prompt }],
-//       temperature: 0.7,
-//     });
-
-//     // OpenAIレスポンスの中身をログ出力
-//     console.log("OpenAI Completion Response:", JSON.stringify(completion, null, 2));
-//     const blogText = completion.choices[0].message.content; // 完成したブログ内容
-//     console.log("Generated blog text:", blogText);
-
-//     // VOICEVOX ENGINE の URL（Cloud Run）
-//     const VOICEVOX_ENGINE_URL = 'https://voicevox-engine-44ispcgxza-an.a.run.app';
-//     const speakerId = 1;
-    
-//     // Step1: audio_query を取得（GET + URLエンコード）
-//     const queryRes = await axios.post(
-//       `${VOICEVOX_ENGINE_URL}/audio_query?text=${encodeURIComponent(blogText)}&speaker=${speakerId}`,
-//       null,
-//       {
-//         headers: { 'Accept': 'application/json' },
-//       }
-//     );
-//     let audioQuery = queryRes.data;
-
-//     // 🎵 再生速度を上げる（デフォルト: 1.0）
-//     audioQuery.speedScale = 1.2;
-//     audioQuery.postPhonemeLength = 0.1;
-    
-//     console.log("Modified Audio Query with speedScale:", audioQuery);
-    
-//     // Step2: synthesis で音声生成
-//     const synthRes = await axios.post(
-//       `${VOICEVOX_ENGINE_URL}/synthesis?speaker=${speakerId}`,
-//       audioQuery,
-//       {
-//         headers: { 'Content-Type': 'application/json' },
-//         responseType: 'arraybuffer',
-//         timeout: 600000,
-//       }
-//     );
-//     console.log("Synthesis Response: Audio Data received");
-
-//     // 音声を返却
-//     const buffer = Buffer.from(synthRes.data);
-//     res.set('Content-Type', 'audio/wav');
-//     res.set('Content-Length', buffer.length);
-//     res.set('Accept-Ranges', 'bytes');  // ブラウザのシーク対応
-//     res.send(buffer);
-//         // res.send(synthRes.data);
-
-//   } catch (error) {
-//     console.error('Error generating blog or synthesizing voice:', error?.response?.data || error);
-//     res.status(500).send('Error generating blog or synthesizing voice.');
-//   }
-// };
-
 const { v4: uuidv4 } = require("uuid");
 const openai = new OpenAI({ apiKey: functions.config().openai.key });
 //const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -2047,14 +1935,20 @@ let speedScale = 1.4;
 let finalURL = "";
 const SPEAKER_ID = 1; // ずんだもん等（適宜変更）
 const { youtubeUpload } = require('./youtubeUpload');
-
+const https = require('https');
 
 //exports.generateBlogVideoFromLatestNews = async (req, res) => {
-exports.generateBlogVideoFromLatestNews = functions.https.onRequest(async (req, res) => {
-  // CORS対応
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'POST');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
+exports.generateBlogVideoFromLatestNews = functions
+  .runWith({ memory: '1GB', timeoutSeconds: 540 })
+  .https.onRequest(async (req, res) => {
+    // CORS対応
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'POST');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
   if (req.method === 'OPTIONS') {
     res.status(204).send('');
     return;
@@ -2067,13 +1961,14 @@ exports.generateBlogVideoFromLatestNews = functions.https.onRequest(async (req, 
   let blogText = "";
   let videoTitle = "";
   let videoTags = [];
+  let articleLink = "";
+  let videoId = "";
   try {
-      // POSTで受け取ったデータ（UIから来た場合）
-      const { _videoTitle, _blogText, _videoTags } = req.body || {};
-      blogText = _blogText;
-      videoTitle = _videoTitle;
-      videoTags = _videoTags;
-  }catch (err) {
+    const { _videoTitle, _blogText, _videoTags } = req.body || {};
+    blogText = _blogText;
+    videoTitle = _videoTitle;
+    videoTags = _videoTags;
+  } catch (err) {
     console.error('_blogTextがからのため自動生成モードで実行');
   }
 
@@ -2081,58 +1976,23 @@ exports.generateBlogVideoFromLatestNews = functions.https.onRequest(async (req, 
     if (!blogText) {
       // 自動実行モード
       const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber+OR+%E3%83%9B%E3%83%AD%E3%83%A9%E3%82%A4%E3%83%96+OR+%E3%81%AB%E3%81%98%E3%81%95%E3%82%93%E3%81%98&hl=ja&gl=JP&ceid=JP:ja');
-      //const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber&hl=ja&gl=JP&ceid=JP:ja');
-
-        // pubDateでソート
-      const sortedItems = feed.items.sort((a, b) => {
-        return new Date(b.pubDate) - new Date(a.pubDate); // 新しい順
-      });
+      const sortedItems = feed.items.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
       const latestItem = sortedItems[0];
-      console.log(latestItem.title);
-      console.log(latestItem.link);
-      const title = latestItem.title;
-      const articleLink = latestItem.link;
-
+      videoTitle = latestItem.title;
+      articleLink = latestItem.link;
       const isAlreadyProcessed = await alreadyProcessed(articleLink);
       if (isAlreadyProcessed) {
-        console.log(`スキップ：すでに生成済み - > ${articleLink}`);
-
         res.status(200).send(`スキップ：すでに生成済み - > ${articleLink}`);
-        return; // 処理終了
-      }else{
-        console.log(`スタート：動画を生成します - > ${articleLink}`);
+        return;
       }
       finalURL = articleLink;
       const articleText = await getArticleContent(articleLink);
       let prompt = "";
-      console.log("記事:", articleText);
-      
-      // const status = articleText ? 'OK' : 'NG';
-      // const safeFileName = getSafeFileNameFromUrl(articleLink);
-      
-      // // 既存の文字列テンプレートの形を維持
-      // const filePath = `temp/${status}_${safeFileName}.txt`;
-      // const tempFilePath = `/tmp/${status}_${safeFileName}.txt`; 
-      
-      // // 一時ファイルとして保存
-      // await fs.promises.writeFile(tempFilePath, articleText || '', { encoding: 'utf8' });
-      
-      // // Cloud Storageにアップロード
-      // await storage.bucket(bucketName).upload(tempFilePath, {
-      //   destination: filePath,
-      // });
-
-      // console.log(`記事を ${filePath} に保存しました`);
-      
       if (articleText) {
-        // スクレイピングした記事内容を元に台本を生成
-        // await generateScript(articleText);
         prompt = `以下のVtuberに関連する記事を要約し、youtubeにアップするためのニュース動画の台本を作成してください。youtubeにアップした際再生数が取れそうな内容にしたいです。必要であればSNSでの反響なども踏まえつつ、台本のボリュームは全体で400文字以内で、改行せず、台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\n記事: ${articleText}`;
       } else {
-        console.log('記事の取得に失敗しました。タイトルで生成します。');
-        prompt = `以下の記事タイトルに基づいて、youtubeにアップするニュース記事の台本を400文字以内で、Vtuberに関連するニュースのみを改行せず台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\nタイトル: ${title}`;
+        prompt = `以下の記事タイトルに基づいて、youtubeにアップするニュース記事の台本を400文字以内で、Vtuberに関連するニュースのみを改行せず台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\nタイトル: ${videoTitle}`;
       }
-
       const completion = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [{ role: 'user', content: prompt }],
@@ -2252,13 +2112,44 @@ exports.generateBlogVideoFromLatestNews = functions.https.onRequest(async (req, 
     await deleteGcsFile(bucketName, `output/output-${uuid}.wav`);
     await deleteGcsFile(bucketName, `output/output-${uuid}.srt`);
 
-    // ~~~~~~~~~~~~~~~~~~~~
-    // // ② アップロード実行（バケット名と動画ファイル名を指定）
+    // ========================================
+    // ② アップロード実行（バケット名と動画ファイル名を指定）
     const videoId = await youtubeUpload(bucketName, outputFilePath,videoTitle,videoDescription,videoTags);
     await deleteGcsFile(bucketName, outputFilePath);
 
     res.status(200).send(`動画を生成してYouTubeにアップロードしました: https://youtu.be/${videoId}`);
-    // // ~~~~~~~~~~~~~~~~~~~~
+    // ========================================
+
+    // ========================================
+    // ★★ ここから videoUrlMap.json へのマージ処理 ★★
+    // ========================================
+    try {
+      // Cloud StorageからvideoUrlMap.jsonを取得
+      const videoUrlMapFile = bucket_.file('videoUrlMap.json');
+      let videoUrlMap = {};
+      try {
+        const [contents] = await videoUrlMapFile.download();
+        videoUrlMap = JSON.parse(contents.toString());
+      } catch (err) {
+        // ファイルが存在しない場合は空で初期化
+        console.log('videoUrlMap.jsonが存在しないため新規作成');
+        videoUrlMap = {};
+      }
+
+      // 記事URLをキーにYouTube動画URLをマッピング
+      if (articleLink && videoId) {
+        videoUrlMap[articleLink] = `https://youtu.be/${videoId}`;
+      }
+
+      // Cloud Storageに上書き保存
+      await videoUrlMapFile.save(JSON.stringify(videoUrlMap, null, 2), { contentType: 'application/json' });
+      console.log('videoUrlMap.json updated:', articleLink, videoId);
+    } catch (err) {
+      console.error('videoUrlMap.json update error:', err);
+    }
+    // ★★ ここまで news.json の videoUrl 付与処理 ★★
+
+    res.status(200).send(`動画を生成してYouTubeにアップロードしました: https://youtu.be/${videoId}`);
 
   } catch (error) {
     console.error('Error generating blog or merging video:', error?.response?.data || error);

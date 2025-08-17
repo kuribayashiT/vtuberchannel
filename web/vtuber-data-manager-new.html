@@ -188,9 +188,15 @@
                                 <label for="birthday">Birthday <span
                                         style="color: #e57373; font-weight: bold;">*</span></label>
                                 <input type="text" id="birthday" required pattern="^(\d{2}(-|/)\d{2}|-)$"
-                                    placeholder="MM-DD または -"
+                                    placeholder="誕生日（MM-DD または -）"
                                     style="border: 2px solid #ffb6b9; border-radius: 8px; padding: 10px; font-size: 15px; background: #fff0f6;">
                                 <small style="color: #e57373;">例: 10/05 または 10-05 または「-」</small>
+                                <div class="form-group">
+                                    <label for="debut">デビュー日（初配信日・任意）</label>
+                                    <input type="date" id="debut" name="debut" class="form-control"
+                                        placeholder="例: 2024/10/28">
+                                    <small class="form-text text-muted">※空欄でもOK。日付形式は <b>2024/10/28</b> です。</small>
+                                </div>
                             </div>
                             <div class="form-buttons">
                                 <button type="button" onclick="resetForm()" class="btn-secondary">Reset</button>
@@ -258,9 +264,15 @@
                                         <div class="form-group"
                                             style="flex: 1 1 120px; min-width: 80px; display: flex; flex-direction: column; justify-content: center;">
                                             <input type="text" required data-field="birthday"
-                                                pattern="^(\d{2}(-|/)\d{2}|-)$" placeholder="MM-DD または -"
+                                                pattern="^(\d{2}(-|/)\d{2}|-)$" placeholder="誕生日（MM-DD または -）"
                                                 style="width: 100%; min-width: 60px; border: 2px solid #ffb6b9; border-radius: 8px; padding: 8px; font-size: 15px; background: #fff0f6; height: 36px;">
                                             <small style="color: #e57373;">例: 10/05 または 10-05 または「-」</small>
+                                            <div class="form-group"
+                                                style="flex: 1 1 120px; min-width: 80px; display: flex; flex-direction: column; justify-content: center;">
+                                                <input type="date" data-field="debut" placeholder="デビュー日（任意）"
+                                                    style="width: 100%; min-width: 60px; border: 1.5px solid #b3e5fc; border-radius: 8px; padding: 8px; font-size: 15px; background: #e3f2fd; height: 36px;">
+                                                <small style="color: #2196f3;">例: 2024/10/28 形式。空欄OK</small>
+                                            </div>
                                         </div>
                                         <div class="form-group"
                                             style="flex: 1 1 100px; min-width: 80px; display: flex; align-items: center;">

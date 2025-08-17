@@ -314,7 +314,17 @@ async function importData() {
 }
 async function handleAddVtuber(event) {
     event.preventDefault();
-    const channelId = document.getElementById('channelId').value.trim();
+    let channelId = document.getElementById('channelId').value.trim();
+    // ここでハンドル名なら変換
+    if (channelId.startsWith('@')) {
+        try {
+            channelId = await convertHandleToChannelId(channelId);
+        } catch (e) {
+            showStatus('❌ チャンネルID変換に失敗しました: ' + e.message, 'error');
+            return false;
+        }
+    }
+
     const name = document.getElementById('vtuberName').value.trim();
     const twitterName = document.getElementById('twitterName').value.trim();
     // 選択中の事務所名を取得
@@ -368,6 +378,14 @@ async function handleAddVtuber(event) {
     const officeFlgNode = document.querySelector('input[name="officeFlg"]:checked');
     const officeFlg = officeFlgNode ? officeFlgNode.value : '';
     const description = document.getElementById('description') ? document.getElementById('description').value.trim() : '';
+
+    // debut（初配信日）は任意入力
+    let debut = '';
+    const debutInput = document.getElementById('debut');
+    if (debutInput) {
+        debut = debutInput.value.trim();
+    }
+
     if (!channelId || !name || !birthday || officeFlg === '') {
         showStatus('❌ チャンネルID・名前・誕生日・事務所所属フラグは必須項目です。', 'error');
         return false;
@@ -390,6 +408,10 @@ async function handleAddVtuber(event) {
             officeFlg: officeFlg === 'true',
             description
         };
+        // debutが空でなければ追加
+        if (debut) {
+            payload.debut = debut;
+        }
         console.log('[AddVtuber] 送信データ:', payload);
         const response = await fetch(`${typeof currentApiBase !== 'undefined' ? currentApiBase : BASE_URL}/addVtuberData`, {
             method: 'POST',
@@ -1593,18 +1615,25 @@ async function bulkAddVtubers() {
                 showStatus(`❌ 事務所所属フラグ（officeFlg）は必須です: ${nameInput.value}`, 'error');
                 continue;
             }
+            const debutInput = entry.querySelector('[data-field="debut"]');
+            const debutValue = debutInput ? debutInput.value.trim() : '';
+            let channeID = channelInput.value.trim();
+            if (channeID.startsWith('@')) {
+                channeID = await convertHandleToChannelId(channeID);
+            }
             const vtuberData = {
                 name: nameInput.value.trim(),
-                channelId: channelInput.value.trim(),
+                channeID: channeID, // ← channeIDで送信
                 twitterName: twitterInput.value.trim(),
                 birthday: birthdayValue,
                 office: selectedOffice,
-                officeFlg: officeFlgRadio.value === 'true'
+                officeFlg: officeFlgRadio.value === 'true',
+                debut: debutValue // 空でも必ず送信
             };
             // @Handleの場合は自動変換
-            if (vtuberData.channelId.startsWith('@')) {
-                const convertedId = await convertHandleToChannelId(vtuberData.channelId);
-                vtuberData.channelId = convertedId;
+            if (vtuberData.channeID.startsWith('@')) {
+                const convertedId = await convertHandleToChannelId(vtuberData.channeID);
+                vtuberData.channeID = convertedId;
             }
             try {
                 const response = await fetch(`${currentApiBase}/addVtuberData`, {
@@ -2046,17 +2075,21 @@ async function autoRegisterSelected() {
             });
 
             const channelData = await response.json();
-
+            const debutInput = entry.querySelector('[data-field="debut"]');
+            const debutValue = debutInput ? debutInput.value.trim() : '';
+            let channeID = channelInput.value.trim();
+            if (channeID.startsWith('@')) {
+                channeID = await convertHandleToChannelId(channeID);
+            }
             // VTuberデータとして登録
             const vtuberData = {
-                name: channelData.name,
-                channelId: channelId,
-                office: selectedOfficeValue || channelData.office || '',
-                thumbnailUrl: channelData.thumbnailUrl,
-                subscriberCount: channelData.subscriberCount,
-                videoCount: channelData.videoCount,
-                description: channelData.description,
-                twitterName: twitterName || undefined  // Twitter名を追加
+                name: nameInput.value.trim(),
+                channeID: channeID, // ← channeIDで送信
+                twitterName: twitterInput.value.trim(),
+                birthday: birthdayValue,
+                office: selectedOffice,
+                officeFlg: officeFlgRadio.value === 'true',
+                debut: debutValue // 空でも必ず送信
             };
 
             await fetch(`${currentApiBase}/addVtuberData`, {
