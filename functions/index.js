@@ -109,7 +109,7 @@ exports.addVtuberMetaBatch = functions.https.onRequest(async (req, res) => {
       }
     }
 
-    // 既存VTuberデータに3項目だけ追加
+    // 既存VTu Nberデータに3項目だけ追加
     let updateCount = 0;
     for (const key in vtuberDict) {
       if (key === "updateTime") continue;
@@ -155,7 +155,7 @@ exports.getOfficeData = functions.https.onRequest(async (request, response) => {
   }
   try {
 
-// 定期的なニュース取得
+    // 定期的なニュース取得
 
     //★★★★★★★★★★★★★★★
     const snapshot = await db.ref('vtuber').once('value');
@@ -214,7 +214,7 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
     officeMappingCachePromise = null;
 
     const refVtuber = await db.ref('vtuber').once('value');
-    const apiKey = 'AIzaSyDEJ47ME_oxje2r5XX6hHtMf-F8W2zINSE'; 
+    const apiKey = 'AIzaSyDEJ47ME_oxje2r5XX6hHtMf-F8W2zINSE';
     // 50(GET_YOUTUBE_DATA_NUM)名毎にYoutube channels() を叩く必要がる
     const GET_YOUTUBE_DATA_NUM = 50; // 例：一度に取得するチャンネルIDの数
     let vtuberIDList = []; // 例：VTuberのチャンネルIDのリスト
@@ -254,10 +254,25 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
         });
         allChannelYoutubeApiInfo = allChannelYoutubeApiInfo.concat(response.data.items);
 
-      }catch (error) {
+        // ここでthumbnailUrlをRealtime Databaseに反映
+        for (const item of response.data.items) {
+          const channeID = item.id;
+          const thumbnailUrl = item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || "";
+          if (channeID && thumbnailUrl) {
+            // vtuberノードのchanneID一致するものにthumbnailUrlをupdate
+            for (const key in vtuberDict) {
+              if (vtuberDict[key]?.channeID === channeID) {
+                await db.ref(`vtuber/${key}`).update({ thumbnailUrl });
+                break;
+              }
+            }
+          }
+        }
+
+      } catch (error) {
         console.error("エラー発生", error);
       }
-      if(membar_channel_id_List_str_List.length - 1 == i){
+      if (membar_channel_id_List_str_List.length - 1 == i) {
         const bucket = storage.bucket('vtuber-335811.appspot.com');
         const appendToFile = async (data, bucket, baseFileName) => {
           const fileName = `${baseFileName}.json`;
@@ -270,22 +285,22 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
             resumable: false,  // 追記するために必要
             timeout: 540000,  // タイムアウトを調整（ミリ秒単位）
           });
-        
+
           fileStream.on('finish', () => {
             // console.log(`${fileName}: データの追記が完了しました:`,data);
           });
-        
+
           fileStream.on('error', (error) => {
             // console.error(`${fileName}: データの追記中にエラーが発生しました:`, error);
             throw error;  // エラー発生時に終了
           });
-        
+
           // データ全体を一つのJSON配列にまとめる
           const jsonArray = JSON.stringify(data, null, 2);
           // 配列全体を書き込む
           fileStream.write(jsonArray);
           fileStream.end();
-        
+
           await new Promise((resolve, reject) => {
             fileStream.on('finish', resolve);
             fileStream.on('error', reject);
@@ -301,8 +316,8 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
       }
     }
   }
-);
-  
+  );
+
 // ================================================  
 // allChannelYoutubeApiInfoからYoutubeデータ作成
 //  scheduled every 5 minutes
@@ -318,7 +333,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
   .schedule('every 5 minutes')  // スケジュールを設定
   .timeZone('Asia/Tokyo') // タイムゾーンを設定
   .onRun(async (context) => {
-    const apiKey = 'AIzaSyDEJ47ME_oxje2r5XX6hHtMf-F8W2zINSE'; 
+    const apiKey = 'AIzaSyDEJ47ME_oxje2r5XX6hHtMf-F8W2zINSE';
     const refVtuber = await db.ref('vtuber').once('value');;
     const threadRef = firestoreDB.collection('threads');
     const vtuberDict = refVtuber.val();
@@ -374,7 +389,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
         }
         if (!exists) {
           // console.log("== allvideosが存在しないため新規作成");
-          allvideos =[];
+          allvideos = [];
           resolve();
         } else {
           // ファイルが存在する場合、ダウンロード
@@ -401,13 +416,13 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               const actualStartTime = video.actualStartTime ? new Date(video.actualStartTime).getTime() : null;
               const actualEndTime = video.actualEndTime ? new Date(video.actualEndTime).getTime() : null;
               const currentTime = Date.now();
-            
+
               // 配信が終了していない、または配信がまだ始まっていない条件
               return (scheduledStartTime !== null && scheduledStartTime < currentTime) ||  // 配信予定日が未来
-                     (actualStartTime === null || actualStartTime === "") ||  // 配信が開始してない
-                     (actualStartTime !== null && actualStartTime <= currentTime &&  // 配信が開始済み and 配信が終了していない
-                     (actualEndTime === null || actualEndTime === "" || actualEndTime > currentTime));
-                     //actualEndTime === ""));
+                (actualStartTime === null || actualStartTime === "") ||  // 配信が開始してない
+                (actualStartTime !== null && actualStartTime <= currentTime &&  // 配信が開始済み and 配信が終了していない
+                  (actualEndTime === null || actualEndTime === "" || actualEndTime > currentTime));
+              //actualEndTime === ""));
             });
 
             // console.log(`   == allvideos -> ongoingVideos抽出`);
@@ -418,12 +433,11 @@ exports.scheduledRealTimeDBToYoutubeData = functions
       });
     });
     // console.log("  == allvideos:",allvideos);
-
     // console.log("========================================");
     // console.log("== weeklyLiveViewRanking");
     // console.log("========================================");
     let weeklyLiveViewRanking = bucket.file('weeklyLiveViewRanking.json'); // ダウンロードするJSONファイルのパスに置き換え
-    
+
     // ファイルの存在確認
     await new Promise((resolve, reject) => {
       weeklyLiveViewRanking.exists((err, exists) => {
@@ -434,7 +448,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
         }
         if (!exists) {
           // console.log("== weeklyLiveViewRankingが存在しないため新規作成");
-          weeklyLiveViewRanking =[];
+          weeklyLiveViewRanking = [];
           resolve();
         } else {
           // ファイルが存在する場合、ダウンロード
@@ -468,7 +482,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
     // console.log("========================================");
     // グラフ描画用のファイルをダウンロード
     let youtubeSubscriberCountTransition = bucket.file('youtubeSubscriberCountTransitionList.json'); // ダウンロードするJSONファイルのパスに置き換え
-    
+
     // ファイルの存在確認
     await new Promise((resolve, reject) => {
       youtubeSubscriberCountTransition.exists((err, exists) => {
@@ -551,7 +565,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
     let channelMap = {};
     let vtuberNum = 0;
     for (let [mapIndex, channel] of allChannelYoutubeApiInfo.entries()) {
-      if (channel && channel.kind === "youtube#channel") { 
+      if (channel && channel.kind === "youtube#channel") {
         for (const member in vtuberDict) {
           if (member === "updateTime") {
             continue;
@@ -575,7 +589,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
           }
         }
       }
-      if(allChannelYoutubeApiInfo.length - 1 == mapIndex){
+      if (allChannelYoutubeApiInfo.length - 1 == mapIndex) {
         // console.log("  == officeNameList:",officeNameList);
         // console.log("  == allChannelYoutubeApiInfo -> channelMap:",channelMap);
 
@@ -585,7 +599,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
         // channel情報をアップデート
         for (const [index, channel_result] of allChannelYoutubeApiInfo.entries()) {
           let membar_channel_id = "";
-          if (channel_result && channel_result.kind === "youtube#channel") {  
+          if (channel_result && channel_result.kind === "youtube#channel") {
             membar_channel_id = String(channel_result.id);
             for (const member in vtuberDict) {
               if (member === "updateTime") {
@@ -602,7 +616,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             // // chatの作成
             // //===========================
             // const querySnapshot = await threadRef.where('name', '==', channel_result.snippet.title).get();
-          
+
             // if (querySnapshot.empty) {
             //   // スレッドが存在しない場合、新規作成
             //   const newThread = {
@@ -620,12 +634,12 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             // console.log("  == 基本情報と更新時間 -> " + channel_result.snippet.title);
             // console.log("  == channelThumbnail -> " + channel_result.snippet.thumbnails.high.url);
             // console.log("  == membar_channel_id -> " + membar_channel_id);
-            
+
 
             let d_today_utc_youtube_update_time = new Date().toISOString().slice(0, 16).replace('T', ' ');
             let todaysSubscriberCount = channel_result["statistics"]["subscriberCount"]
             const newSubscriberData = {
-              [todayStr]:todaysSubscriberCount
+              [todayStr]: todaysSubscriberCount
             };
 
             // チャンネルIDのデータが存在しない場合は新規作成
@@ -641,11 +655,11 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               // 既存のデータを更新
               const dataList = youtubeSubscriberCountTransitionList[channelDataIndex][membar_channel_id];
               // console.log("   == dataList:", dataList);
-              
+
               // 新しい日付が配列に存在するかチェック
               const newDateKey = Object.keys(newSubscriberData)[0];
               const exists = dataList.some(data => newDateKey in data);
-              
+
               // 存在しない場合、新しいデータを追加
               if (!exists) {
                 dataList.push(newSubscriberData);
@@ -654,7 +668,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               const thirtyDaysAgo = new Date();
               thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
               // console.log(" thirtyDaysAgo:",thirtyDaysAgo);
-              
+
               const isOlderThanThirtyDays = (dateStr) => {
                 // targetDateをDateオブジェクトに変換
                 const year = dateStr.substring(0, 4);
@@ -742,16 +756,16 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                     if (matchingVideos.length == 0) {
                       ENTRY_LIST.push(entry);
                       // console.log(`     == newVideo追加 ->:`,entry['yt:videoId']);
-                    }else{
+                    } else {
                       // allvideosにあるが、終了していなかったVideoであれば追加。
                       let ongoingVideoExists = ongoingVideos.some(video => video.videoID === entry['yt:videoId']);
-                      if (ongoingVideoExists){
+                      if (ongoingVideoExists) {
                         ENTRY_LIST.push(entry);
                         // console.log(`     == ongoingVideo追加 ->:`,entry['yt:videoId']);
                       }
                     }
                   }
-                } 
+                }
                 if (ENTRY_LIST.length > 47 || (index === allChannelYoutubeApiInfo.length - 1 && ENTRY_LIST.length > 0)) {
                   try {
                     // console.log(`    == ${ENTRY_LIST.length}件entryがたまったのでyoutube.videos()実行`);
@@ -763,14 +777,14 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                         key: apiKey,
                       },
                     });
-                    for (const [videoindex, entry] of ENTRY_LIST.entries())  {
+                    for (const [videoindex, entry] of ENTRY_LIST.entries()) {
                       // console.log("      ========================================");
                       // console.log("      == vtuber情報 -> 動画情報をアップデート"     );
                       // console.log("      ========================================");
                       // console.log("      == 対象のchannel情報 -> " + entry['yt:channelId']);
                       // console.log("      == 対象の動画情報 -> " + entry['yt:videoId']);
                       // console.log("      == entry:",entry); 
-                      
+
                       const mediaGroup = entry.mediaGroup ? entry.mediaGroup[0] : null;
                       let mediaThumbnail = null;
                       let views = null;
@@ -824,7 +838,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                             }
                           }
                         }
-                      } 
+                      }
                       // チャンネルのサムネイルと名前を取得
                       let channelData = channelMap[entry['yt:channelId']];
                       channelName = channelData.title;
@@ -836,25 +850,25 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                       const comparisonDay = scheduledStartTimeDate && scheduledStartTimeDate > publishedAtDate
                         ? scheduledStartTime
                         : entry["pubDate"];
-                        // console.log("      == scheduledStartTimeDate:",scheduledStartTimeDate);
-                        // console.log("      == publishedAtDate:",publishedAtDate);
-                        // console.log("      == scheduledStartTime:",scheduledStartTime);
-                        // console.log("      == entry[pubDate]:",entry["pubDate"]);
-                        // console.log("      == comparisonDay:",comparisonDay);
+                      // console.log("      == scheduledStartTimeDate:",scheduledStartTimeDate);
+                      // console.log("      == publishedAtDate:",publishedAtDate);
+                      // console.log("      == scheduledStartTime:",scheduledStartTime);
+                      // console.log("      == entry[pubDate]:",entry["pubDate"]);
+                      // console.log("      == comparisonDay:",comparisonDay);
 
                       const vtuberVideoValueAdd = Object.assign({}, {
-                        [entry['yt:videoId']]:{
-                          office:await mapOfficeStringSafeAsync(channelOfficeKey),
-                          officeKey:channelOfficeKey,
-                          videoID:entry['yt:videoId'],
-                          channelTitle:channelName, 
-                          channelId:entry['yt:channelId'],
-                          channelThumbnail: channelThumbnail, 
+                        [entry['yt:videoId']]: {
+                          office: await mapOfficeStringSafeAsync(channelOfficeKey),
+                          officeKey: channelOfficeKey,
+                          videoID: entry['yt:videoId'],
+                          channelTitle: channelName,
+                          channelId: entry['yt:channelId'],
+                          channelThumbnail: channelThumbnail,
                           title: entry.title,
                           thumbnail: media_thumbnail,
                           viewCount: views,
                           goodCount: goodCount,
-                          comparisonDay:comparisonDay,
+                          comparisonDay: comparisonDay,
                           publishedAt: entry["pubDate"],
                           duration: duration,
                           scheduledStartTime: scheduledStartTime,
@@ -864,24 +878,24 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                         }
                       });
                       const vtuberVideobjOValueAdd = Object.assign({}, {
-                          office:await mapOfficeStringSafeAsync(channelOfficeKey),
-                          officeKey:channelOfficeKey,
-                          videoID:entry['yt:videoId'],
-                          channelTitle:channelName,
-                          channelId:entry['yt:channelId'],
-                          channelThumbnail: channelThumbnail,
-                          title: entry.title,
-                          thumbnail: media_thumbnail,
-                          viewCount: views,
-                          goodCount: goodCount,
-                          comparisonDay:comparisonDay,
-                          publishedAt: entry["pubDate"],
-                          duration: duration,
-                          scheduledStartTime: scheduledStartTime,
-                          actualStartTime: actualStartTime,
-                          actualEndTime: actualEndTime,
-                          concurrent_viewers: concurrentViewers,
-                        
+                        office: await mapOfficeStringSafeAsync(channelOfficeKey),
+                        officeKey: channelOfficeKey,
+                        videoID: entry['yt:videoId'],
+                        channelTitle: channelName,
+                        channelId: entry['yt:channelId'],
+                        channelThumbnail: channelThumbnail,
+                        title: entry.title,
+                        thumbnail: media_thumbnail,
+                        viewCount: views,
+                        goodCount: goodCount,
+                        comparisonDay: comparisonDay,
+                        publishedAt: entry["pubDate"],
+                        duration: duration,
+                        scheduledStartTime: scheduledStartTime,
+                        actualStartTime: actualStartTime,
+                        actualEndTime: actualEndTime,
+                        concurrent_viewers: concurrentViewers,
+
                       });
                       vtuberVideoDataObj.push(vtuberVideobjOValueAdd);
                       vtuberVideoData.push(vtuberVideoValueAdd);
@@ -953,25 +967,27 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               twitterName: memberName,
             });
             allYoutubeDataObj.push(_youtubeValueAdd);
-            allYoutubeData.push(youtubeValueAdd);            
+            allYoutubeData.push(youtubeValueAdd);
 
             // rankingYoutubeRegiDataに格納
-            const rankingYoutubeRegi  = Object.assign({}, {
-              channelId:membar_channel_id,
-              channelThumbnail:channel_result.snippet.thumbnails.high.url,
-              name:channel_result.snippet.title,
-              office:await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
-              youtubeSubscriberCount:channel_result.statistics.subscriberCount
+            const thumbnailUrl = channel_result.snippet.thumbnails.high?.url || channel_result.snippet.thumbnails.default?.url;
+
+            const rankingYoutubeRegi = Object.assign({}, {
+              channelId: membar_channel_id,
+              channelThumbnail: thumbnailUrl,
+              name: channel_result.snippet.title,
+              office: await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
+              youtubeSubscriberCount: channel_result.statistics.subscriberCount
 
             });
             rankingYoutubeRegiData.push(rankingYoutubeRegi);
             // rankingVideoCountDataに格納
-            const rankingVideoCount  = Object.assign({}, {
-              channelId:membar_channel_id,
-              channelThumbnail:channel_result.snippet.thumbnails.high.url,
-              name:channel_result.snippet.title,
-              office:await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
-              videoCount:channel_result.statistics.videoCount
+            const rankingVideoCount = Object.assign({}, {
+              channelId: membar_channel_id,
+              channelThumbnail: thumbnailUrl,
+              name: channel_result.snippet.title,
+              office: await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
+              videoCount: channel_result.statistics.videoCount
 
             });
             rankingVideoCountData.push(rankingVideoCount);
@@ -985,12 +1001,12 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             if (!eventList[formattedDate]) {
               eventList[formattedDate] = [];
             }
-            const _eventList  = Object.assign({}, {
-              eventType:"createAt",
-              channelId:membar_channel_id,
-              channelThumbnail:channel_result.snippet.thumbnails.high.url,
-              name:channel_result.snippet.title,
-              office:await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
+            const _eventList = Object.assign({}, {
+              eventType: "createAt",
+              channelId: membar_channel_id,
+              channelThumbnail: channel_result.snippet.thumbnails.high.url,
+              name: channel_result.snippet.title,
+              office: await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
               createdAt: channelMap[membar_channel_id].debut,
             });
             eventList[formattedDate].push(_eventList);
@@ -1003,13 +1019,13 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             if (!eventList[formattedBDate]) {
               eventList[formattedBDate] = [];
             }
-            const _eventBList  = Object.assign({}, {
-              eventType:"birthday",
-              channelId:membar_channel_id,
-              channelThumbnail:channel_result.snippet.thumbnails.high.url,
-              name:channel_result.snippet.title,
-              office:await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
-              birthday:channelMap[membar_channel_id].birthday,
+            const _eventBList = Object.assign({}, {
+              eventType: "birthday",
+              channelId: membar_channel_id,
+              channelThumbnail: channel_result.snippet.thumbnails.high.url,
+              name: channel_result.snippet.title,
+              office: await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
+              birthday: channelMap[membar_channel_id].birthday,
             });
             eventList[formattedBDate].push(_eventBList);
           }
@@ -1023,7 +1039,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             return result;
           }
           // 最後のループに入ったら、ファイルを作成
-          if(allChannelYoutubeApiInfo.length - 1 == index){
+          if (allChannelYoutubeApiInfo.length - 1 == index) {
             // console.log("    ========================================");
             // console.log("    == 全ての処理が終わったので、データ成形");
             // console.log("    ========================================");
@@ -1040,7 +1056,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                 //   (actualEndTime === null || actualEndTime === 0 || actualEndTime > currentTime);
                 // concurrentViewers の有無でライブ中かを判定
                 return video.concurrent_viewers !== undefined && video.concurrent_viewers !== null && video.concurrent_viewers !== "";
-                
+
               }
               return false;
             });
@@ -1054,28 +1070,28 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             // allvideosとvtuberVideoData/vtuberVideoDataObj をマージ
             for (const oldVideoData of allvideos) {
               let videoExists = vtuberVideoDataObj.some(video => video.videoID === oldVideoData.videoID);
-              if (!videoExists){
+              if (!videoExists) {
                 // console.log('== videoExists、古いVideoData追加');
                 vtuberVideoDataObj.push(oldVideoData)
                 // console.log('== videoExists、古いVideoData追加 -> ',oldVideoData['videoID']);
                 const _vtuberVideoValueAdd = Object.assign({}, {
-                  [oldVideoData['videoID']]:{
-                    office:oldVideoData['office'],
-                    officeKey:oldVideoData['officeKey'],
-                    videoID:oldVideoData['videoID'],
-                    channelTitle:oldVideoData['channelTitle'], 
-                    channelId:oldVideoData['channelId'],
-                    channelThumbnail: oldVideoData['channelThumbnail'], 
-                    title:oldVideoData['title'],
-                    thumbnail:oldVideoData['thumbnail'],
-                    viewCount:oldVideoData['viewCount'],
-                    comparisonDay:oldVideoData['comparisonDay'],
-                    publishedAt:oldVideoData['publishedAt'],
-                    duration:oldVideoData['duration'],
-                    scheduledStartTime:oldVideoData['scheduledStartTime'],
-                    actualStartTime:oldVideoData['actualStartTime'],
-                    actualEndTime:oldVideoData['actualEndTime'],
-                    concurrent_viewers:oldVideoData['concurrent_viewers'],
+                  [oldVideoData['videoID']]: {
+                    office: oldVideoData['office'],
+                    officeKey: oldVideoData['officeKey'],
+                    videoID: oldVideoData['videoID'],
+                    channelTitle: oldVideoData['channelTitle'],
+                    channelId: oldVideoData['channelId'],
+                    channelThumbnail: oldVideoData['channelThumbnail'],
+                    title: oldVideoData['title'],
+                    thumbnail: oldVideoData['thumbnail'],
+                    viewCount: oldVideoData['viewCount'],
+                    comparisonDay: oldVideoData['comparisonDay'],
+                    publishedAt: oldVideoData['publishedAt'],
+                    duration: oldVideoData['duration'],
+                    scheduledStartTime: oldVideoData['scheduledStartTime'],
+                    actualStartTime: oldVideoData['actualStartTime'],
+                    actualEndTime: oldVideoData['actualEndTime'],
+                    concurrent_viewers: oldVideoData['concurrent_viewers'],
                   }
                 });
                 vtuberVideoData.push(_vtuberVideoValueAdd);
@@ -1101,13 +1117,13 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             // チャネルIDごとにVideoDataを抽出して追加
             for (const youtubeData of allYoutubeData) {
               const channelId = Object.keys(youtubeData)[0];
-          
+
               // filteredDataを取得
               const filteredData = vtuberVideoData.filter(video => {
                 const videoKey = Object.keys(video)[0];
                 return video[videoKey].channelId === channelId;
               });
-              
+
               // filteredDataをpublishedAtでソート
               filteredData.sort((a, b) => {
                 const dateA = new Date(Object.values(a)[0].comparisonDay);
@@ -1142,7 +1158,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                 // console.log(' == youtubeDataObj');
                 // console.log(' == youtubeDataObj -> ',membar_channel_id);
                 // console.log(' == youtubeDataObj["channeID"]',youtubeDataObj["channeID"]);
-                if (youtubeDataObj["channeID"] == membar_channel_id){
+                if (youtubeDataObj["channeID"] == membar_channel_id) {
                   youtubeDataObj["videos"] = convertTransitionArrayToObject(filteredData);
                   youtubeDataObj["youtubeSubscriberCountTransition"] = convertTransitionArrayToObject(transitionListObj[membar_channel_id]);
                   // console.log(' == youtubeDataObj videos-> ',youtubeDataObj["videos"]);
@@ -1239,7 +1255,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               // chatの作成
               //===========================
               const querySnapshot = await threadRef.where('name', '==', office).get();
-            
+
               if (querySnapshot.empty) {
                 // スレッドが存在しない場合、新規作成
                 const newThread = {
@@ -1275,7 +1291,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             // console.log("    ========================================");
             // console.log("    == 全てのデータ成形が終わったので、データをアップロード");
             // console.log("    ========================================");
-      
+
             // console.log("ファイルアップロード START");
             // ===========================
             // allYoutubeDataのファイルアップデート・allVtuberのファイルアップデート
@@ -1292,28 +1308,28 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                 resumable: false,  // 追記するために必要
                 timeout: 540000,  // タイムアウトを調整（ミリ秒単位）
               });
-            
+
               fileStream.on('finish', () => {
                 // console.log(`${fileName}: データの追記が完了しました:`,data.length);
               });
-            
+
               fileStream.on('error', (error) => {
                 // console.error(`${fileName}: データの追記中にエラーが発生しました:`, error);
                 throw error;  // エラー発生時に終了
               });
-            
+
               // データ全体を一つのJSON配列にまとめる
               const jsonArray = JSON.stringify(data, null, 2);
               // 配列全体を書き込む
               fileStream.write(jsonArray);
               fileStream.end();
-            
+
               await new Promise((resolve, reject) => {
                 fileStream.on('finish', resolve);
                 fileStream.on('error', reject);
               });
             };
-            
+
             try {
               //　liveVideoListのファイルアップロード
               await appendToFile(liveVideos, bucket, 'livevideoList');
@@ -1321,7 +1337,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             } catch (error) {
               console.error('    == liveVideoListのデータの追記中にエラーが発生しました:', error);
             }
-            
+
             try {
               // allYoutubeDataのファイルアップロード
               await appendToFile(allYoutubeData, bucket, 'allYoutubeData');
@@ -1329,13 +1345,13 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             } catch (error) {
               console.error('    == allYoutubeDataのデータの追記中にエラーが発生しました:', error);
             }
-            
+
             try {
               // allVtuberDataのファイルアップロード
               vtuberVideoDataObj.sort((a, b) => {
                 const dateA = new Date(a.comparisonDay);
                 const dateB = new Date(b.comparisonDay);
-              
+
                 // 日付の新しい順にソート
                 return dateB - dateA;
               });
@@ -1347,7 +1363,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               allvideos.sort((a, b) => {
                 const dateA = new Date(a.comparisonDay);
                 const dateB = new Date(b.comparisonDay);
-              
+
                 // 日付の新しい順にソート
                 return dateB - dateA;
               });
@@ -1356,14 +1372,14 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               // console.log('    == allvideosのデータの追記が完了しました');
             } catch (error) {
               console.error('    == allvideosのデータの追記中にエラーが発生しました:', error);
-            } 
-            
+            }
+
             try {
               await appendToFile(youtubeSubscriberCountTransitionList, bucket, 'youtubeSubscriberCountTransitionList');
               // console.log('    == youtubeSubscriberCountTransitionListのデータの追記が完了しました');
             } catch (error) {
               console.error('    == youtubeSubscriberCountTransitionListのデータの追記中にエラーが発生しました:', error);
-            } 
+            }
 
             try {
               //　weeklyLiveViewRankingのファイルアップロード
@@ -1380,7 +1396,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             } catch (error) {
               console.error('    == rankingYoutubeRegiDataのデータの追記中にエラーが発生しました:', error);
             }
-            
+
             try {
               //　rankingVideoCountDataのファイルアップロード
               await appendToFile(rankingVideoCountData, bucket, 'rankingVideoCountData');
@@ -1396,7 +1412,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               // console.log('    == eventListのデータの追記が完了しました');
             } catch (error) {
               console.error('    == eventListのデータの追記中にエラーが発生しました:', error);
-            } 
+            }
 
             try {
               // officeDataListのファイルアップロード
@@ -1412,7 +1428,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
       }
     }
   }
-);
+  );
 
 // 事務所追加API
 exports.addOffice = functions.https.onRequest(async (req, res) => {
@@ -1464,39 +1480,116 @@ exports.addOffice = functions.https.onRequest(async (req, res) => {
 // RSSフィードのURLを配列で指定
 
 
-// 定期的なニュース取得
-exports.scheduledNewsUpdate = functions.pubsub
-  .schedule('every 1 hours') // 1時間ごとに実行
-  .timeZone('Asia/Tokyo') // タイムゾーンを設定
+// // 定期的なニュース取得
+// exports.scheduledNewsUpdate = functions.pubsub
+//   .schedule('every 1 hours') // 1時間ごとに実行
+//   .timeZone('Asia/Tokyo') // タイムゾーンを設定
+//   .onRun(async (context) => {
+//     console.log('[scheduledNewsUpdate] start');
+//     const rssFeeds = [
+//       'https://news.google.com/rss/search?q=VTuber+OR+%E3%83%9B%E3%83%AD%E3%83%A9%E3%82%A4%E3%83%96+OR+%E3%81%AB%E3%81%98%E3%81%95%E3%82%93%E3%81%98&hl=ja&gl=JP&ceid=JP:ja'
+//     ];
+//     let allArticles = [];
+//     try {
+//       console.log('[scheduledNewsUpdate] fetchFeed start', rssFeeds);
+//       const fetchFeedPromises = rssFeeds.map(feedUrl => fetchFeed(feedUrl, allArticles));
+//       await Promise.all(fetchFeedPromises);
+//       console.log('[scheduledNewsUpdate] fetchFeed done, articles:', allArticles.length);
+//       allArticles.forEach((a, i) => {
+//         if (i < 3) console.log(`[scheduledNewsUpdate] sample article[${i}]:`, a.title, a.publishedAt);
+//       });
+//       allArticles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+
+//       // ★★ ここから videoUrlMap.json 参照による videoUrl 付与処理 ★★
+//       let videoUrlMap = {};
+//       try {
+//         const videoUrlMapFile = storage.bucket('vtuber-335811.appspot.com').file('videoUrlMap.json');
+//         const [contents] = await videoUrlMapFile.download();
+//         videoUrlMap = JSON.parse(contents.toString());
+//         console.log('[scheduledNewsUpdate] videoUrlMap.json loaded:', Object.keys(videoUrlMap).length);
+//       } catch (err) {
+//         console.log('[scheduledNewsUpdate] videoUrlMap.json not found or empty, skip merge');
+//         videoUrlMap = {};
+//       }
+
+//       // 記事URLが一致するものにvideoUrlを付与
+//       allArticles.forEach(article => {
+//         if (videoUrlMap[article.url]) {
+//           article.videoUrl = videoUrlMap[article.url];
+//         }
+//       });
+//       // ★★ ここまで videoUrlMap.json 参照による videoUrl 付与処理 ★★
+
+//       // ファイルデータをメモリ内に書き込む
+//       const bucket = storage.bucket('vtuber-335811.appspot.com');
+//       const fileName = 'news.json';
+//       const file = bucket.file(fileName);
+//       const fileStream = file.createWriteStream({
+//         metadata: {
+//           contentType: 'application/json'
+//         },
+//         timeout: 5400000,
+//       });
+//       await new Promise((resolve, reject) => {
+//         const fileContents = JSON.stringify(allArticles);
+//         fileStream.on('finish', () => {
+//           console.log('[scheduledNewsUpdate] news.json upload finish');
+//           resolve();
+//         });
+//         fileStream.on('error', (err) => {
+//           console.error('[scheduledNewsUpdate][upload ERROR]', err);
+//           reject(err);
+//         });
+//         fileStream.end(fileContents);
+//       });
+//     } catch (error) {
+//       console.error('[scheduledNewsUpdate][ERROR]', error);
+//     }
+//     console.log('[scheduledNewsUpdate] end');
+//   });
+const openai = new OpenAI({ apiKey: functions.config().openai.key });
+exports.scheduledNewsUpdate = functions
+  .runWith({ timeoutSeconds: 300, memory: '1GB' })
+  .pubsub
+  .schedule('30 6,8,11,12,14,17,20,23 * * *') // ← 指定時刻で毎日実行
+  .timeZone('Asia/Tokyo')
   .onRun(async (context) => {
-    console.log('[scheduledNewsUpdate] start');
-    const rssFeeds = [
-      'https://news.google.com/rss/search?q=VTuber+OR+%E3%83%9B%E3%83%AD%E3%83%A9%E3%82%A4%E3%83%96+OR+%E3%81%AB%E3%81%98%E3%81%95%E3%82%93%E3%81%98&hl=ja&gl=JP&ceid=JP:ja'
-    ];
+    console.log('[scheduledNewsUpdate][SerpApi] start');
+    const serpApiUrl = 'https://serpapi.com/search.json?engine=google_news&q=Vtuber+OR+ホロライブ+OR+にじさんじ&hl=ja&gl=jp&api_key=a3a91148d53c22e83d8fdf3023684b952c802d9a669b40e4b44f4c2885824865';
     let allArticles = [];
     try {
-      console.log('[scheduledNewsUpdate] fetchFeed start', rssFeeds);
-      const fetchFeedPromises = rssFeeds.map(feedUrl => fetchFeed(feedUrl, allArticles));
-      await Promise.all(fetchFeedPromises);
-      console.log('[scheduledNewsUpdate] fetchFeed done, articles:', allArticles.length);
+      // SerpApiからニュース取得
+      const serpRes = await axios.get(serpApiUrl);
+      const newsResults = serpRes.data.news_results || [];
+      console.log(`[scheduledNewsUpdate][SerpApi] news_results: ${newsResults.length}`);
+      allArticles = newsResults.map(item => ({
+        channel: (item.source && typeof item.source === 'object' ? item.source.name : item.source) || '',
+        title: item.title,
+        publishedAt: formatDateSerpApi(item.date || item.date_published || ''),
+        description: item.snippet || '',
+        url: item.link,
+        creator: item.author || '',
+        urlToImage: item.thumbnail_small || '',
+        sourceName: '',
+        // sourceName: item.source || '',
+        sourceUrl: item.link || '',
+      }));
       allArticles.forEach((a, i) => {
-        if (i < 3) console.log(`[scheduledNewsUpdate] sample article[${i}]:`, a.title, a.publishedAt);
+        if (i < 3) console.log(`[scheduledNewsUpdate][SerpApi] sample article[${i}]:`, a.title, a.publishedAt);
       });
       allArticles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
 
-      // ★★ ここから videoUrlMap.json 参照による videoUrl 付与処理 ★★
+      // ★★ videoUrlMap.json 参照による videoUrl 付与処理 ★★
       let videoUrlMap = {};
       try {
         const videoUrlMapFile = storage.bucket('vtuber-335811.appspot.com').file('videoUrlMap.json');
         const [contents] = await videoUrlMapFile.download();
         videoUrlMap = JSON.parse(contents.toString());
-        console.log('[scheduledNewsUpdate] videoUrlMap.json loaded:', Object.keys(videoUrlMap).length);
+        console.log('[scheduledNewsUpdate][SerpApi] videoUrlMap.json loaded:', Object.keys(videoUrlMap).length);
       } catch (err) {
-        console.log('[scheduledNewsUpdate] videoUrlMap.json not found or empty, skip merge');
+        console.log('[scheduledNewsUpdate][SerpApi] videoUrlMap.json not found or empty, skip merge');
         videoUrlMap = {};
       }
-
-      // 記事URLが一致するものにvideoUrlを付与
       allArticles.forEach(article => {
         if (videoUrlMap[article.url]) {
           article.videoUrl = videoUrlMap[article.url];
@@ -1504,7 +1597,68 @@ exports.scheduledNewsUpdate = functions.pubsub
       });
       // ★★ ここまで videoUrlMap.json 参照による videoUrl 付与処理 ★★
 
-      // ファイルデータをメモリ内に書き込む
+      // === タイトル重複除去（videoUrl優先） ===
+      // 1. タイトル完全一致でグループ化
+      console.log('[scheduledNewsUpdate][SerpApi] タイトル完全一致でグループ化');
+      const grouped = {};
+      for (const article of allArticles) {
+        const key = article.title.trim();
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(article);
+      }
+      // 2. videoUrl付き優先で1件だけ残す
+      console.log('[scheduledNewsUpdate][SerpApi] videoUrl付き優先で1件だけ残す');
+      let dedupedArticles = [];
+      for (const key in grouped) {
+        const group = grouped[key];
+        const withVideo = group.filter(a => a.videoUrl);
+        if (withVideo.length > 0) {
+          dedupedArticles.push(withVideo[0]);
+        } else {
+          dedupedArticles.push(group[0]);
+        }
+      }
+
+      // === タイトルが微妙に違うもの同士の重複をOpenAIで判定 ===
+      // 3. AIで「同じニュースか？」を判定し、同じなら1つだけ残す
+      console.log('[scheduledNewsUpdate][SerpApi] AIで「同じニュースか？」を判定し、同じなら1つだけ残す');
+      async function isSameNews(titleA, titleB) {
+        if (titleA === titleB) return true;
+        const prompt = `次の2つのニュースタイトルは内容的に同じニュースですか？違う場合は「NO」、同じ場合は「YES」とだけ返答してください。\n\nA: ${titleA}\nB: ${titleB}`;
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-3.5-turbo',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 3,
+          temperature: 0,
+        });
+        return completion.choices[0].message.content.trim().toUpperCase() === 'YES';
+      }
+
+      // 4. 2重ループで比較し、同じと判定されたものは1つだけ残す
+      const finalArticles = [];
+      console.log('[scheduledNewsUpdate][SerpApi] 2重ループで比較し、同じと判定されたものは1つだけ残す');
+      for (let i = 0; i < dedupedArticles.length; i++) {
+        if (i % 10 === 0) console.log(`[scheduledNewsUpdate][SerpApi] dedup loop i=${i}/${dedupedArticles.length}`);
+        // if (dedupedArticles.length > 20) break;
+        let isDuplicate = false;
+        for (let j = 0; j < finalArticles.length; j++) {
+          // OpenAI APIコスト削減のため、タイトル長が短い・記号だけ違う場合はスキップ
+          if (dedupedArticles[i].title === finalArticles[j].title) {
+            isDuplicate = true;
+            break;
+          }
+          // // 類似判定（必要な場合のみ呼ぶ）
+          // if (await isSameNews(dedupedArticles[i].title, finalArticles[j].title)) {
+          //   isDuplicate = true;
+          //   break;
+          // }
+        }
+        if (!isDuplicate) finalArticles.push(dedupedArticles[i]);
+      }
+
+      console.log('[scheduledNewsUpdate][SerpApi] finalArticles', finalArticles.length);
+      // === ファイル書き込み ===
+      console.log('[scheduledNewsUpdate][SerpApi] ファイル書き込み');
       const bucket = storage.bucket('vtuber-335811.appspot.com');
       const fileName = 'news.json';
       const file = bucket.file(fileName);
@@ -1515,23 +1669,22 @@ exports.scheduledNewsUpdate = functions.pubsub
         timeout: 5400000,
       });
       await new Promise((resolve, reject) => {
-        const fileContents = JSON.stringify(allArticles);
+        const fileContents = JSON.stringify(finalArticles);
         fileStream.on('finish', () => {
-          console.log('[scheduledNewsUpdate] news.json upload finish');
+          console.log('[scheduledNewsUpdate][SerpApi] news.json upload finish');
           resolve();
         });
         fileStream.on('error', (err) => {
-          console.error('[scheduledNewsUpdate][upload ERROR]', err);
+          console.error('[scheduledNewsUpdate][SerpApi][upload ERROR]', err);
           reject(err);
         });
         fileStream.end(fileContents);
       });
     } catch (error) {
-      console.error('[scheduledNewsUpdate][ERROR]', error);
+      console.error('[scheduledNewsUpdate][SerpApi][ERROR]', error);
     }
-    console.log('[scheduledNewsUpdate] end');
+    console.log('[scheduledNewsUpdate][SerpApi] end');
   });
-
 // ================================================  
 // All Video List取得処理の定義
 // ================================================
@@ -1570,7 +1723,7 @@ exports.getTwitterData = functions.https.onRequest(async (request, response) => 
       if (!err) {
         const jsonStr = contents.toString();
         const jsonData = JSON.parse(jsonStr);
-    
+
         // ダウンロードとパースが完了したJSONデータを利用できます
         // console.log("jsonData:",jsonData);
         response.status(200).json({ jsonData });
@@ -1583,7 +1736,13 @@ exports.getTwitterData = functions.https.onRequest(async (request, response) => 
     response.status(500).json({ error: 'Something went wrong [rankingTwitterData]' });
   }
 });
-
+function formatDateSerpApi(dateStr) {
+  if (!dateStr) return '';
+  // 例: "08/21/2025, 06:52 AM, +0000 UTC"
+  const d = new Date(dateStr.replace(/, \\+\\d+ UTC$/, '')); // UTC部分を除去してDate化
+  const pad = n => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
 // ================================================  
 // Youtube 登録者数 取得処理の定義
 // ================================================
@@ -1607,7 +1766,7 @@ exports.getYoutubeRegiData = functions.https.onRequest(async (request, response)
       if (!err) {
         const jsonStr = contents.toString();
         const jsonData = JSON.parse(jsonStr);
-    
+
         // ダウンロードとパースが完了したJSONデータを利用できます
         // console.log("jsonData:",jsonData);
         response.status(200).json({ jsonData });
@@ -1644,7 +1803,7 @@ exports.getEventListData = functions.https.onRequest(async (request, response) =
       if (!err) {
         const jsonStr = contents.toString();
         const jsonData = JSON.parse(jsonStr);
-    
+
         // ダウンロードとパースが完了したJSONデータを利用できます
         // console.log("jsonData:",jsonData);
         response.status(200).json({ jsonData });
@@ -1681,7 +1840,7 @@ exports.getLiveVideoData = functions.https.onRequest(async (request, response) =
       if (!err) {
         const jsonStr = contents.toString();
         const jsonData = JSON.parse(jsonStr);
-    
+
         // ダウンロードとパースが完了したJSONデータを利用できます
         // console.log("liveVideoDataFile:",jsonData);
         response.status(200).json({ jsonData });
@@ -1718,7 +1877,7 @@ exports.getVtuberData = functions.https.onRequest(async (request, response) => {
       if (!err) {
         const jsonStr = contents.toString();
         const jsonData = JSON.parse(jsonStr);
-    
+
         // ダウンロードとパースが完了したJSONデータを利用できます
         // console.log("vtuberDataFile:",jsonData);
         response.status(200).json({ jsonData });
@@ -1756,7 +1915,7 @@ exports.getOfficeListData = functions.https.onRequest(async (request, response) 
       if (!err) {
         const jsonStr = contents.toString();
         const jsonData = JSON.parse(jsonStr);
-    
+
         // ダウンロードとパースが完了したJSONデータを利用できます
         // console.log("getOfficeListData:",jsonData);
         response.status(200).json({ jsonData });
@@ -1818,103 +1977,10 @@ exports.sendMail = functions.https.onRequest(async (request, response) => {
   }
 });
 
-
-// ==============================================================================  
-// 共通関数の定義
-// ==============================================================================
-// 単一のRSSフィードの取得
-async function fetchFeed(feedUrl, allArticles) {
-  const fallbackFeeds = [
-    'https://news.google.com/rss/search?q=VTuber&hl=ja&gl=JP&ceid=JP:ja',
-    'https://vtuber-matomeruyon.blog.jp/index.rdf'
-  ];
-  try {
-    console.log('[fetchFeed] start', feedUrl);
-    const feed = await parser.parseURL(feedUrl);
-    console.log(`[fetchFeed] ${feedUrl} items: ${feed.items.length}`);
-    // 画像取得を試みる
-    let _imageUrl = "";
-    try {
-      _imageUrl = ""; // feed.image.url
-    } catch (error) {
-      console.error(`[fetchFeed][image] ${feedUrl}: ${error.message}`);
-    }
-
-    feed.items.forEach(item => {
-      let date = new Date();
-      if (item.hasOwnProperty('date')) {
-        date = formatDate(item.date);
-      } else if (item.hasOwnProperty('pubDate')) {
-        date = formatDate(item.pubDate);
-      }
-      let imageUrl = _imageUrl;
-      let articleContentEncoded = "";
-      try {
-        articleContentEncoded = item['content:encoded'];
-        if (articleContentEncoded) {
-          const imageUrlRegex = /https?:\/\/[\S]+?\.(jpg|png)/g; // jpg または webp を含むURLを正規表現で検索
-          const matches = articleContentEncoded.match(imageUrlRegex);
-          if (matches && matches.length >= 2) {
-            imageUrl = matches[1];
-          }
-        }
-      } catch (error2) {
-        articleContentEncoded = item.contentEncoded;
-      }
-
-      // Google News RSSの<source>要素対応
-      let sourceName = '';
-      let sourceUrl = '';
-      if (item.source) {
-        if (typeof item.source === 'object') {
-          sourceName = item.source['#'] || item.source;
-          sourceUrl = item.source['$'] && item.source['$'].url ? item.source['$'].url : '';
-        } else {
-          sourceName = item.source;
-        }
-      }
-
-      // sourceNameが無い場合はタイトル末尾の「 - 媒体名」を抽出
-      let channelName = sourceName;
-      if (!channelName) {
-        const match = item.title && item.title.match(/ - ([^\-]+)$/);
-        if (match) {
-          channelName = match[1].trim();
-        } else {
-          channelName = '';
-        }
-      }
-      const article = {
-        channel: channelName,
-        title: item.title,
-        publishedAt: date,
-        description: item.description,
-        url: item.link,
-        creator: item.creator,
-        urlToImage: imageUrl,
-        sourceName: sourceName,
-        sourceUrl: sourceUrl,
-        // 他の記事データも必要に応じて追加
-      };
-      allArticles.push(article);
-    });
-  } catch (error) {
-    if (error && error.message && error.message.includes('Status code 503') && fallbackFeeds.length > 0) {
-      const nextFeed = fallbackFeeds.shift();
-      console.error(`[fetchFeed ERROR] ${feedUrl}: 503, retrying with fallback: ${nextFeed}`);
-      await fetchFeed(nextFeed, allArticles);
-    } else {
-      console.error(`[fetchFeed ERROR] ${feedUrl}: ${error && error.stack ? error.stack : error}`);
-    }
-  }
-}
-
-
 // ==============================================================================  
 // 動画生成の定義
 // ==============================================================================
 const { v4: uuidv4 } = require("uuid");
-const openai = new OpenAI({ apiKey: functions.config().openai.key });
 //const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // const openai = new OpenAI({
 //   apiKey: functions.config().openai.api_key, // Firebase環境変数からAPIキーを取得
@@ -1936,10 +2002,11 @@ let finalURL = "";
 const SPEAKER_ID = 1; // ずんだもん等（適宜変更）
 const { youtubeUpload } = require('./youtubeUpload');
 const https = require('https');
+const fs = require('fs');
 
 //exports.generateBlogVideoFromLatestNews = async (req, res) => {
 exports.generateBlogVideoFromLatestNews = functions
-  .runWith({ memory: '1GB', timeoutSeconds: 540 })
+  .runWith({ memory: '2GB', timeoutSeconds: 540 })
   .https.onRequest(async (req, res) => {
     // CORS対応
     res.set('Access-Control-Allow-Origin', '*');
@@ -1949,216 +2016,446 @@ exports.generateBlogVideoFromLatestNews = functions
       res.status(204).send('');
       return;
     }
-  if (req.method === 'OPTIONS') {
-    res.status(204).send('');
+
+    const uuid = uuidv4();
+    let blogText = "";
+    let videoTitle = "";
+    let videoTags = [];
+    let articleLink = "";
+    let articleText = "";
+    let thumbnail = "";
+    let videoId = "";
+    let resultMessage = "";
+
+    try {
+      const { _videoTitle, _blogText, _videoTags } = req.body || {};
+      blogText = _blogText;
+      videoTitle = _videoTitle;
+      videoTags = _videoTags;
+    } catch (err) {
+      console.error('_blogTextがからのため自動生成モードで実行');
+    }
+
+    try {
+      if (!blogText) {
+        // 自動実行モード
+        let publishedAt = "";
+        let description = "";
+        // フォールバック
+        console.log("[自動モード]news.jsonから記事取得");
+        const fallback = await getFallbackNewsData();
+        if (fallback) {
+          console.log("[自動モード]fallback", fallback.title);
+          console.log("[自動モード]fallback", fallback.url);
+          videoTitle = fallback.title;
+          thumbnail = fallback.thumbnail_small || '';
+          console.log('[getFinalUrlWithPuppeteer] Start:', fallback.url);
+          articleLink = fallback.url; //await getFinalUrlWithPuppeteer(fallback.url);
+          console.log("[自動モード]getFinalUrlWithPuppeteer", articleLink);
+          publishedAt = fallback.publishedAt;
+        } else {
+          throw new Error('[自動モード]Feed Err: No news data available');
+        }
+        const isAlreadyProcessed = await alreadyProcessed(articleLink);
+        if (isAlreadyProcessed) {
+          res.status(200).send(`スキップ：すでに生成済み - > ${articleLink}`);
+          return;
+        }
+        finalURL = articleLink;
+        articleText = await getArticleContent(articleLink);
+        console.log("[自動モード]articleText:", articleText);
+        let prompt = "";
+        if (articleText) {
+          prompt = `Vtuberに関連する記事内容を解説する、ニュース動画を作成します。
+          この動画はショート動画でyoutubeにアップします。
+          以下の記事内容を適宜要約するなどして、口頭で解説するため自然な文脈にして台本を作成してください。
+          youtubeにアップした際、再生数が取れそうな内容にしたいです。
+          また、元記事へのリンクは概要欄に貼るので、リンクなどの読み上げは不要です。あくまでも内容にフォーカスしてください。
+          必要であればSNSでの反響なども踏まえつつ、台本のボリュームは全体で500文字以内で、改行せず、台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。
+          \n記事: ${articleText}`;
+        } else {
+          prompt = `以下の記事タイトルに基づいて、youtubeにアップするニュース記事の台本を600文字以内で、Vtuberに関連するニュースのみを改行せず台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\nタイトル: ${videoTitle}`;
+        }
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: "system",
+              content: "あなたはYouTubeショート動画用の台本ライターです。Vtuber関連ニュースを自然でわかりやすく解説し、再生数が伸びるようにまとめてください。"
+            },
+            {
+              role: "user",
+              content: prompt
+            }
+          ],
+          temperature: 0.7,
+        });
+        blogText = completion.choices[0].message.content;
+        console.log("[自動モード]GGenerated blog text:", blogText);
+      } else {
+        // 手動モード
+        console.log("[手動モード]Generated blog text:", blogText);
+      }
+
+      if (!videoTitle) {
+        // Title自動モード
+        const title_prompt = `以下の台本の内容を読み上げる形でyoutube動画にしようとしています。その際の動画タイトルを、再生数が取れそうな引きのある文言で20文字程度までの長さで作成してください。台本：${blogText}`;
+        const title_completion = await openai.chat.completions.create({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: "system",
+              content: "あなたはYouTubeショート動画用の台本ライターです。Vtuber関連ニュースに対し、再生数が伸びるようなタイトルを付けてください。なお、youtube動画のタイトル文字数制限は100文字です"
+            },
+            { role: 'user', content: title_prompt }
+          ],
+          temperature: 0.7,
+        });
+        videoTitle = title_completion.choices[0].message.content;
+        console.log("[自動モード]GGenerated Title:", videoTitle);
+      } else {
+        // Title手動モード
+        console.log("[手動モード]Generated Title:", videoTitle);
+      }
+
+      // タイトルとブログ結合
+      blogText = `${videoTitle}\n${blogText}\n以上のニュース詳細は概要欄にて。\nいいねと思ったら、チャンネル登録と高評価をお願いします。`;
+      console.log("Generated blog text+Title:", blogText);
+
+      const description_prompt = `以下の台本をyoutube動画にする際の動画のdescriptionを、300文字程度までで日本語で作成してください。先ほどの台本：${blogText}`;
+      const description_completion = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          {
+            role: "system",
+            content: "あなたはYouTubeショート動画用の台本ライターです。Vtuber関連ニュースを自然でわかりやすく解説し、再生数が伸びるようにまとめてください。"
+          },
+          { role: 'user', content: description_prompt }
+        ],
+        temperature: 0.7,
+      });
+      let videoDescription = description_completion.choices[0].message.content;
+
+      videoDescription = `${videoDescription}\n\nニュース詳細:${finalURL}\n`;
+      console.log("Generated blog videoDescription:", videoDescription);
+
+      const furigana_prompt = `以下の文章に含まれる英単語・アルファベット表記（例: Vtuber, YouTube, SNS, AIなど）・固有名詞を、適切な日本語の読み（カタカナ）に変換してください。文章の構造はそのままにし、不要な改行や説明文は入れず、変換後の文章のみを出力してください。\n\n文章：${blogText}`
+      const furigana_completion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: "system",
+            content: "あなたは日本語の音声合成用にテキストを整形するアシスタントです。VOICEVOXで正しく自然に読めるように調整してください。"
+          },
+          {
+            role: "user",
+            content: furigana_prompt
+          }
+        ],
+        temperature: 0.3,
+      });
+      const furiganaText = furigana_completion.choices[0].message.content;
+      console.log("Generated Furigana text:", furiganaText);
+
+      if (!Array.isArray(videoTags)) {
+        // Tag自動モード
+        const tags_prompt = `以下の台本をyouTube動画にする際の動画のTagを、検索にヒットしやすいものから20個、日本語で出力してください。
+          - 「vtuber」は必ず含めてください。
+          - 絵文字は含めないでください。
+          - 出力は JSON 配列形式のみ、余計な説明はしないでください。
+          - 例: ["vtuber", "ニュース", "コラボ", "配信", "ゲーム"]
+          台本：${blogText}`;
+
+        const tags_completion = await openai.chat.completions.create({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: "system",
+              content: "あなたはYouTubeショート動画用の台本ライターです。Vtuber関連ニュースを自然でわかりやすく解説し、再生数が伸びるようにまとめてください。"
+            },
+            { role: 'user', content: tags_prompt }
+          ],
+          temperature: 0.7,
+        });
+        const rawText = tags_completion.choices[0].message.content.trim();
+
+        // 最初の JSON 配列っぽい部分を正規表現で抽出
+        const match = rawText.match(/\[[\s\S]*?\]/);
+        videoTags = ['vtuber', '毎日投稿', 'ニュース']; // フォールバック
+
+        if (match) {
+          try {
+            videoTags = JSON.parse(match[0]);
+          } catch (err) {
+            console.error('❌ タグのJSONパース失敗:', err.message);
+          }
+        } else {
+          console.warn('⚠️ タグの配列形式が見つかりませんでした');
+        }
+        console.log("[手動モード]Generated Tag:", videoTags);
+      } else {
+        // Tag手動モード
+        console.log("[手動モード]Generated Tag:", videoTags);
+      }
+
+      // 1. VOICEVOX: 音声合成　2. 字幕生成
+      await generateVoiceAndSRT(furiganaText, blogText, uuid);
+
+      // 🎞️ 動画合成リクエスト
+      const videoMergerUrl = 'https://video-merger-23130474318.asia-northeast1.run.app/merge';
+      const videoGcsUri = await getRandomBackgroundGcsUri(bucketName);
+      const outputFilePath = `merged-output/output-${uuid}.mp4`;
+      const outputPath = `gs://${bucketName}/${outputFilePath}`;
+      const audioGcsUri = `gs://${bucketName}/output/output-${uuid}.wav`;
+      const subtitleGcsUri = `gs://${bucketName}/output/output-${uuid}.srt`;
+
+      const mergeRes = await axios.post(videoMergerUrl, {
+        videoUri: videoGcsUri,
+        audioUri: audioGcsUri,
+        outputUri: outputPath,
+        subtitleSrtUri: subtitleGcsUri,
+      }, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 540000,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+      });
+
+      console.log("Merge result:", mergeRes.data);
+      // ==============================================================================  
+      // ✅ 後始末（音声・字幕ファイルを削除）
+      // ==============================================================================
+
+      await deleteGcsFile(bucketName, `output/output-${uuid}.wav`);
+      await deleteGcsFile(bucketName, `output/output-${uuid}.srt`);
+
+      // ==============================================================================  
+      // 動画アップロード実行
+      // ==============================================================================
+      videoId = await youtubeUpload(bucketName, outputFilePath, videoTitle, videoDescription, videoTags, thumbnail);
+      await deleteGcsFile(bucketName, outputFilePath);
+
+      resultMessage = `動画を生成してYouTubeにアップロードしました: https://youtu.be/${videoId}`;
+
+      // ==============================================================================  
+      // videoUrlMap.json へのマージ処理 ★★
+      // ==============================================================================
+      try {
+        const videoUrlMapFile = bucket_.file('videoUrlMap.json');
+        let videoUrlMap = {};
+        try {
+          const [contents] = await videoUrlMapFile.download();
+          videoUrlMap = JSON.parse(contents.toString());
+        } catch (err) {
+          console.log('videoUrlMap.jsonが存在しないため新規作成');
+          videoUrlMap = {};
+        }
+        if (articleLink && videoId) {
+          videoUrlMap[articleLink] = `https://youtu.be/${videoId}`;
+        }
+        await videoUrlMapFile.save(JSON.stringify(videoUrlMap, null, 2), { contentType: 'application/json' });
+        console.log('videoUrlMap.json updated:', articleLink, videoId);
+      } catch (err) {
+        console.error('videoUrlMap.json update error:', err);
+      }
+      // ==============================================================================  
+      // news.json への反映（1件のみ追記 or 更新）
+      // ==============================================================================
+      try {
+        const newsFile = bucket_.file('news.json');
+        let newsList = [];
+        try {
+          const [contents] = await newsFile.download();
+          newsList = JSON.parse(contents.toString());
+        } catch (err) {
+          newsList = [];
+        }
+        // 既存記事のurl一致で上書き、なければ追加
+        let found = false;
+        for (let i = 0; i < newsList.length; i++) {
+          if (newsList[i].url === articleLink) {
+            newsList[i].videoUrl = `https://youtu.be/${videoId}`;
+            found = true;
+            break;
+          }
+        }
+        // if (!found) {
+        //   // 必要なフィールドをnews.json形式で追加
+        //   newsList.unshift({
+        //     channel: '',
+        //     title: videoTitle,
+        //     publishedAt: publishedAt || new Date().toISOString(),
+        //     description: blogText,
+        //     url: articleLink,
+        //     creator: '',
+        //     urlToImage: thumbnail,
+        //     sourceName: '',
+        //     sourceUrl: articleLink,
+        //     videoUrl: `https://youtu.be/${videoId}`
+        //   });
+
+        await newsFile.save(JSON.stringify(newsList, null, 2), { contentType: 'application/json' });
+        console.log('news.json updated:', articleLink, videoId);
+      } catch (err) {
+        console.error('news.json update error:', err);
+      }
+      // ==============================================================================  
+      // newVtuberCandidates.json へ、新規Vtuber登録処理 ★★
+      // ==============================================================================
+      await collectNewVtuberCandidates(articleText, articleLink);
+    } catch (error) {
+      console.error('Error generating blog or merging video:', error?.response?.data || error);
+      res.status(500).send('Error generating blog or merging video.');
+      return;
+    }
+
+    // 必ず1回だけレスポンスを返す
+    res.status(200).send(resultMessage);
+  }
+  );
+
+async function getFallbackNewsData() {
+  try {
+    const res = await axios.get('https://storage.googleapis.com/vtuber-335811.appspot.com/news.json');
+    const newsList = res.data;
+    // videoUrlが無いものだけ抽出
+    const noVideo = newsList.filter(article => !article.videoUrl);
+    // publishedAt降順でソート
+    noVideo.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+    if (noVideo.length > 0) {
+      return noVideo[0];
+    }
+  } catch (e) {
+    console.error('Fallback news.json fetch error:', e);
+  }
+  return null;
+}
+
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium'); // Cloud Functions用
+
+/**
+ * 記事本文から新規VTuber候補を抽出し、可能な限り情報を埋めてJson保存
+ * @param {string} articleText - 記事本文
+ * @param {string} articleUrl - 記事URL（出典用）
+ */
+async function collectNewVtuberCandidates(articleText, articleUrl) {
+  // 1. 記事本文からVTuber候補をAIで抽出
+  const extractPrompt = `
+以下のニュース記事本文に登場するVTuberの名前・YouTubeチャンネルID（@から始まるものがあればそれも）・Twitter名（@から始まるものがあれば）・事務所名（分かれば）・誕生日やデビュー日（分かれば）をできるだけ多く抽出してください。
+分かる範囲で下記のJSON形式で1人ずつ出力してください。分からない項目は空文字でOKです。
+
+{
+  "name": "",
+  "channeID": "",
+  "twitterName": "",
+  "office": "",
+  "birthday": "",
+  "debut": ""
+}
+
+本文:
+${articleText}
+`;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo',
+    messages: [{ role: 'user', content: extractPrompt }],
+    max_tokens: 2048,
+    temperature: 0.2,
+  });
+
+  // 2. AIの出力からJSON配列を抽出
+  let vtuberCandidates = [];
+  try {
+    // 複数JSONオブジェクトが並ぶ場合も考慮
+    const matches = completion.choices[0].message.content.match(/\{[\s\S]*?\}/g);
+    if (matches) {
+      vtuberCandidates = matches.map(str => {
+        try {
+          return JSON.parse(str);
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
+    }
+  } catch (e) {
+    console.error('AI出力のパースに失敗:', e);
+  }
+
+  if (vtuberCandidates.length === 0) {
+    console.log('新規VTuber候補は見つかりませんでした');
     return;
   }
-  // if (req.method !== 'POST') {
-  //   res.status(405).send('Method Not Allowed');
-  //   return;
-  // }
-  const uuid = uuidv4();
-  let blogText = "";
-  let videoTitle = "";
-  let videoTags = [];
-  let articleLink = "";
-  let videoId = "";
-  try {
-    const { _videoTitle, _blogText, _videoTags } = req.body || {};
-    blogText = _blogText;
-    videoTitle = _videoTitle;
-    videoTags = _videoTags;
-  } catch (err) {
-    console.error('_blogTextがからのため自動生成モードで実行');
+
+  // 3. 既存VTuberリストを取得
+  const snapshot = await db.ref('vtuber').once('value');
+  const vtuberDict = snapshot.val() || {};
+  const existingNames = Object.values(vtuberDict).map(v => v.name);
+
+  // 4. 未登録のみ抽出し、情報を整形
+  const now = new Date().toISOString();
+  const newVtuberObjs = vtuberCandidates
+    .filter(v => v.name && !existingNames.includes(v.name))
+    .map(v => ({
+      name: v.name,
+      channeID: v.channeID || '',
+      twitterName: v.twitterName || '',
+      office: v.office || 'personal',
+      officeFlg: v.office ? v.office !== 'personal' : false,
+      birthday: v.birthday || '',
+      debut: v.debut || '',
+      description: '',
+      createdAt: now,
+      updateTime: now,
+      sourceUrl: articleUrl,
+    }));
+
+  if (newVtuberObjs.length === 0) {
+    console.log('未登録の新規VTuber候補はありません');
+    return;
   }
 
+  // 5. 既存ファイルを読み込んで追記＋重複除去
+  const bucket = storage.bucket('vtuber-335811.appspot.com');
+  const file = bucket.file('newVtuberCandidates.json');
+  let existing = [];
   try {
-    if (!blogText) {
-      // 自動実行モード
-      const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber+OR+%E3%83%9B%E3%83%AD%E3%83%A9%E3%82%A4%E3%83%96+OR+%E3%81%AB%E3%81%98%E3%81%95%E3%82%93%E3%81%98&hl=ja&gl=JP&ceid=JP:ja');
-      const sortedItems = feed.items.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-      const latestItem = sortedItems[0];
-      videoTitle = latestItem.title;
-      articleLink = latestItem.link;
-      const isAlreadyProcessed = await alreadyProcessed(articleLink);
-      if (isAlreadyProcessed) {
-        res.status(200).send(`スキップ：すでに生成済み - > ${articleLink}`);
-        return;
-      }
-      finalURL = articleLink;
-      const articleText = await getArticleContent(articleLink);
-      let prompt = "";
-      if (articleText) {
-        prompt = `以下のVtuberに関連する記事を要約し、youtubeにアップするためのニュース動画の台本を作成してください。youtubeにアップした際再生数が取れそうな内容にしたいです。必要であればSNSでの反響なども踏まえつつ、台本のボリュームは全体で400文字以内で、改行せず、台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\n記事: ${articleText}`;
-      } else {
-        prompt = `以下の記事タイトルに基づいて、youtubeにアップするニュース記事の台本を400文字以内で、Vtuberに関連するニュースのみを改行せず台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\nタイトル: ${videoTitle}`;
-      }
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7,
-      });
-      blogText = completion.choices[0].message.content;
-      console.log("[自動モード]GGenerated blog text:", blogText);
-    }else{
-      // 手動モード
-      console.log("[手動モード]Generated blog text:", blogText);
-    }
-
-
-    if (!videoTitle) {
-      // Title自動モード
-      const title_prompt = `以下の台本の内容を見上げる形でyoutube動画にしようとしています。その際の動画タイトルを、再生数が取れそうな引きのある文言で20文字程度までの長さで作成してください。台本：${blogText}`;
-      const title_completion = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: title_prompt }],
-        temperature: 0.7,
-      });
-      videoTitle = title_completion.choices[0].message.content;
-      console.log("[自動モード]GGenerated Title:", videoTitle);
-    }else{
-      // Title手動モード
-      console.log("[手動モード]Generated Title:", videoTitle);
-    }
-
-
-    // タイトルとブログ結合
-    blogText = `${videoTitle}\n${blogText}\n以上のニュース詳細は概要欄にて。このチャンネルでは、\nこのようなVtuber関連ニュースの\n解説を最速で投稿しています。\nよろしければ、\nチャンネル登録と高評価をお願いします。`;
-    console.log("Generated blog text+Title:", blogText);
-
-    const description_prompt = `以下の台本をyoutube動画にする際の動画のdescriptionを、300文字程度までで日本語で作成してください。先ほどの台本：${blogText}`;
-    const description_completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: description_prompt }],
-      temperature: 0.7,
-    });
-    let videoDescription = description_completion.choices[0].message.content;
-
-    videoDescription = `${videoDescription}\n\nニュース詳細:${finalURL}\n`;
-    console.log("Generated blog videoDescription:", videoDescription);
-
-    const furigana_prompt = `以下の文章全てをVOICEVOXに正しく読ませるために、「Vtuber」を「ブイチューバー」など、英単語やアルファベットで書かれている名詞や英単語をすべて日本語の読み仮名（カタカナ）に変換してください。\n文章：${blogText}`;
-    const furigana_completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: furigana_prompt }],
-      temperature: 0.7,
-    });
-    const furiganaText = furigana_completion.choices[0].message.content;
-    console.log("Generated Furigana text:", furiganaText);
-
-
-    if (!Array.isArray(videoTags)) {
-      // Tag自動モード
-      const tags_prompt = `以下の台本をyouTube動画にする際の動画のTagを、検索にヒットしやすいものから20個、日本語で出力してください。
-        - 「vtuber」は必ず含めてください。
-        - 絵文字は含めないでください。
-        - 出力は JSON 配列形式のみ、余計な説明はしないでください。
-        - 例: ["vtuber", "ニュース", "コラボ", "配信", "ゲーム"]
-        台本：${blogText}`;
-
-      const tags_completion = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: tags_prompt }],
-        temperature: 0.7,
-      });
-      const rawText = tags_completion.choices[0].message.content.trim();
-
-      // 最初の JSON 配列っぽい部分を正規表現で抽出
-      const match = rawText.match(/\[[\s\S]*?\]/);
-      videoTags = ['vtuber','毎日投稿','ニュース']; // フォールバック
-
-      if (match) {
-        try {
-          videoTags = JSON.parse(match[0]);
-        } catch (err) {
-          console.error('❌ タグのJSONパース失敗:', err.message);
-        }
-      } else {
-        console.warn('⚠️ タグの配列形式が見つかりませんでした');
-      }
-      console.log("[手動モード]Generated Tag:", videoTags);
-    }else{
-      // Tag手動モード
-      console.log("[手動モード]Generated Tag:", videoTags);
-
-    }
-
-
-    // 1. VOICEVOX: 音声合成　2. 字幕生成
-     await generateVoiceAndSRT(furiganaText,blogText,uuid);
-
-    // 🎞️ 動画合成リクエスト
-    const videoMergerUrl = 'https://video-merger-23130474318.asia-northeast1.run.app/merge';
-    const videoGcsUri = await getRandomBackgroundGcsUri(bucketName);//'gs://vtuber-335811.appspot.com/background.mp4';
-    const outputFilePath = `merged-output/output-${uuid}.mp4`;
-    const outputPath = `gs://${bucketName}/${outputFilePath}`;
-    const audioGcsUri = `gs://${bucketName}/output/output-${uuid}.wav`;
-    const subtitleGcsUri = `gs://${bucketName}/output/output-${uuid}.srt`;
-
-    const mergeRes = await axios.post(videoMergerUrl, {
-      videoUri: videoGcsUri,
-      audioUri: audioGcsUri,
-      outputUri: outputPath,
-      subtitleSrtUri: subtitleGcsUri,
-    }, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 540000,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-    });
-
-    console.log("Merge result:", mergeRes.data);
-    // ✅ 後始末（音声・字幕ファイルを削除）
-    await deleteGcsFile(bucketName, `output/output-${uuid}.wav`);
-    await deleteGcsFile(bucketName, `output/output-${uuid}.srt`);
-
-    // ========================================
-    // ② アップロード実行（バケット名と動画ファイル名を指定）
-    const videoId = await youtubeUpload(bucketName, outputFilePath,videoTitle,videoDescription,videoTags);
-    await deleteGcsFile(bucketName, outputFilePath);
-
-    res.status(200).send(`動画を生成してYouTubeにアップロードしました: https://youtu.be/${videoId}`);
-    // ========================================
-
-    // ========================================
-    // ★★ ここから videoUrlMap.json へのマージ処理 ★★
-    // ========================================
-    try {
-      // Cloud StorageからvideoUrlMap.jsonを取得
-      const videoUrlMapFile = bucket_.file('videoUrlMap.json');
-      let videoUrlMap = {};
-      try {
-        const [contents] = await videoUrlMapFile.download();
-        videoUrlMap = JSON.parse(contents.toString());
-      } catch (err) {
-        // ファイルが存在しない場合は空で初期化
-        console.log('videoUrlMap.jsonが存在しないため新規作成');
-        videoUrlMap = {};
-      }
-
-      // 記事URLをキーにYouTube動画URLをマッピング
-      if (articleLink && videoId) {
-        videoUrlMap[articleLink] = `https://youtu.be/${videoId}`;
-      }
-
-      // Cloud Storageに上書き保存
-      await videoUrlMapFile.save(JSON.stringify(videoUrlMap, null, 2), { contentType: 'application/json' });
-      console.log('videoUrlMap.json updated:', articleLink, videoId);
-    } catch (err) {
-      console.error('videoUrlMap.json update error:', err);
-    }
-    // ★★ ここまで news.json の videoUrl 付与処理 ★★
-
-    res.status(200).send(`動画を生成してYouTubeにアップロードしました: https://youtu.be/${videoId}`);
-
-  } catch (error) {
-    console.error('Error generating blog or merging video:', error?.response?.data || error);
-    res.status(500).send('Error generating blog or merging video.');
+    const [contents] = await file.download();
+    existing = JSON.parse(contents.toString());
+  } catch (e) {
+    // ファイルがなければ空配列でOK
+    existing = [];
   }
-});
+
+  // 既存候補と新規候補をマージし、重複を除去
+  const all = existing.concat(newVtuberObjs);
+
+  // name, channeID, twitterName のいずれかが一致すれば重複とみなす
+  const unique = [];
+  const seen = new Set();
+  for (const v of all) {
+    const key = [v.name, v.channeID, v.twitterName].join('|');
+    if (!seen.has(key)) {
+      unique.push(v);
+      seen.add(key);
+    }
+  }
+
+  await file.save(JSON.stringify(unique, null, 2), { contentType: 'application/json' });
+
+  console.log('新規VTuber候補を追記（重複除去済み）:', newVtuberObjs);
+}
+
+// ==============================================================================
+// 🎬 動画生成のUtil関数
+// ==============================================================================
 const express = require('express');
 const app = express();
 app.use(express.json());
+const crypto = require('crypto');
+const kuromoji = require('kuromoji');
+const ffmpeg = require("fluent-ffmpeg");
 // app.post('/', async (req, res) => {
 //   try {
 //     await generateBlogVideoFromLatestNews(req, res);
@@ -2172,7 +2469,6 @@ app.use(express.json());
 // });
 // exports.generateBlogVideoFromLatestNews = app;
 
-
 // ランダム動画選択
 async function getRandomBackgroundGcsUri(bucketName) {
   const prefix = 'background_';
@@ -2185,11 +2481,6 @@ async function getRandomBackgroundGcsUri(bucketName) {
   const randomIndex = Math.floor(Math.random() * candidates.length);
   return `gs://${bucketName}/${candidates[randomIndex].name}`;
 }
-// ===============================
-// 🎬 Util
-// ===============================
-
-const crypto = require('crypto');
 
 // ハッシュ + 短縮名で安全なファイル名を作成
 function getSafeFileNameFromUrl(url) {
@@ -2198,10 +2489,12 @@ function getSafeFileNameFromUrl(url) {
   return `${shortId}_${hash}`;
 }
 
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
 // 記事内容を取得する関数
 async function getArticleContent(url) {
+  if (typeof url !== 'string' || !url.startsWith('http')) {
+    console.error('getArticleContent: invalid url', url);
+    return null;
+  }
   const browser = await puppeteer.launch({
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
     executablePath: await chromium.executablePath(),
@@ -2212,10 +2505,8 @@ async function getArticleContent(url) {
 
   try {
     await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
     );
-
-    // 文字化け対策として UTF-8 を優先
     await page.setExtraHTTPHeaders({
       'Accept-Charset': 'utf-8'
     });
@@ -2252,7 +2543,16 @@ async function getArticleContent(url) {
           return paragraphs.join('\n\n');
         }
       }
-      return '';
+      // どのセレクタにも該当しなければ全pタグ
+      const allP = await context.$$eval('p', nodes =>
+        nodes.map(p => p.textContent.trim()).filter(Boolean)
+      );
+      if (allP.length > 0) {
+        return allP.join('\n\n');
+      }
+      // それでも空ならbody全体
+      const bodyText = await context.$eval('body', node => node.innerText.trim());
+      return bodyText || '';
     }
 
     let articleText = await extractParagraphs(page);
@@ -2273,7 +2573,8 @@ async function getArticleContent(url) {
           document.querySelectorAll('div.main-article p').length > 0 ||
           document.querySelectorAll('div.article-body p').length > 0 ||
           document.querySelectorAll('section p').length > 0 ||
-          document.querySelectorAll('article p').length > 0
+          document.querySelectorAll('article p').length > 0 ||
+          document.querySelectorAll('p').length > 0
         );
       }, { timeout: 30000 });
 
@@ -2283,7 +2584,8 @@ async function getArticleContent(url) {
     await browser.close();
 
     // URL を先頭に追加
-    return `【出典】${finalURL}\n\n${articleText}`;
+    const mainText = await extractMainContentWithAI(articleText, finalURL);
+    return `【出典】${finalURL}\n\n${mainText}`;
   } catch (error) {
     console.error('Error fetching article:', error);
     await browser.close();
@@ -2291,6 +2593,22 @@ async function getArticleContent(url) {
   }
 }
 
+async function extractMainContentWithAI(rawText, url) {
+  const prompt = `
+以下はWeb記事の全文テキストです。広告や関連記事、ナビゲーションなど記事本文以外の要素が含まれている場合は無視し、記事本文だけを日本語で抽出してください。本文以外は一切出力しないでください。
+
+【記事URL】${url}
+【記事テキスト】
+${rawText}
+`;
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo',
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 2048,
+    temperature: 0.2,
+  });
+  return completion.choices[0].message.content.trim();
+}
 
 // 🔧 ファイル削除ユーティリティ
 async function deleteGcsFile(bucketName, filePath) {
@@ -2302,8 +2620,8 @@ async function deleteGcsFile(bucketName, filePath) {
   }
 }
 
-// ファイルアップロード共通
-async function uploadToGCS(localPath,remotePath) {
+// 🔧 ファイルアップロード共通
+async function uploadToGCS(localPath, remotePath) {
   console.log(`☁️ Upload ${localPath} to gs://${bucketName}/${remotePath}`);
   await storage.bucket(bucketName).upload(localPath, {
     destination: remotePath,
@@ -2313,11 +2631,13 @@ async function uploadToGCS(localPath,remotePath) {
 }
 
 // 音声生成
-async function synthesizeSentence(text, index,uuid) {
+async function synthesizeSentence(text, index, uuid) {
   const queryResp = await axios.post(`${VOICEVOX_ENGINE_URL}/audio_query`, null, {
     params: { text, speaker: SPEAKER_ID },
   });
-  queryResp.data.speedScale = 1.4;
+  queryResp.data.speedScale = 1.4;           // 話速
+  queryResp.data.volumeScale = 1.3;          // 音量（1.0→1.3など）
+  queryResp.data.intonationScale = 1.3;      // 抑揚（1.0→1.3など）
   const synthesisResp = await axios.post(
     `${VOICEVOX_ENGINE_URL}/synthesis?speaker=${SPEAKER_ID}`,
     queryResp.data,
@@ -2353,57 +2673,46 @@ async function deleteTempFilesByUUID(uuid) {
   console.log('✅ All temp files deleted for uuid:', uuid);
 }
 
-async function generateVoiceAndSRT(text, srttext,uuid) {
-  const sentences = text
-    .split(/(?<=[。！？])/)
-    .map(s => s.trim())
-    .filter(Boolean);
-
-  const srtsentences = srttext
-    .split(/(?<=[。！？])/)
-    .map(s => s.trim())
-    .filter(Boolean);
+// 音声ファイルと字幕ファイルの作成
+async function generateVoiceAndSRT(text, srttext, uuid) {
+  // 音声・字幕用の文節ごとに分割
+  const sentences = customSplit(text);
+  console.log('✅ 音声sentences:', sentences);
+  const srtsentences = customSplit(srttext);
+  console.log('✅ 字幕sentences:', srtsentences);
 
   const audioFiles = [];
   const durations = [];
   let srtContent = '';
   let currentTime = 0;
 
-  const tokenizer = await new Promise((resolve, reject) => {
-    kuromoji.builder({ dicPath: 'node_modules/kuromoji/dict' }).build((err, tokenizer) => {
-      if (err) return reject(err);
-      resolve(tokenizer);
-    });
-  });
-  for (let i = 0; i < sentences.length; i++) {
-    const sentence = sentences[i];
-    const srtsentence = srtsentences[i];
+  for (let i = 0; i < Math.max(sentences.length, srtsentences.length); i++) {
+    const sentence = sentences[i] || "";       // 音声用
+    const srtsentence = srtsentences[i] || ""; // 字幕用
 
-    // kuromoji で長文センテンスを分割（音声と字幕タイミング）
-    const fragments = splitLongSentenceWithKuromoji(tokenizer, srtsentence, 32);
+    // 音声生成
+    console.log(`🔊 音声生成中: ${sentence}`);
+    const filePath = await synthesizeSentence(sentence, audioFiles.length, uuid);
+    audioFiles.push(filePath);
 
-    for (let frag of fragments) {
-      console.log(`🔊 音声生成中: ${frag}`);
-      const filePath = await synthesizeSentence(frag, audioFiles.length,uuid);
-      audioFiles.push(filePath);
-
-      let duration = await getAudioDuration(filePath);
-      if (isNaN(duration)) {
-        console.log(`❌ duration が NaN: filePath=${filePath}`);
-        duration = 0;
-      }
-      durations.push(duration);
-
-      const start = formatSrtTime(currentTime);
-      const end = formatSrtTime(currentTime + duration);
-
-      let wrapped = await wrapWithKuromoji(frag); // 字幕行の改行（16文字など）
-      wrapped = cleanUpWrappedText(wrapped);
-      console.log(`📝 字幕生成中: ${wrapped}`);
-      srtContent += `${audioFiles.length}\n${start} --> ${end}\n${wrapped}\n\n`;
-
-      currentTime += duration;
+    let duration = await getAudioDuration(filePath);
+    if (isNaN(duration)) {
+      console.log(`❌ duration が NaN: filePath=${filePath}`);
+      duration = 0;
     }
+    durations.push(duration);
+
+    const start = formatSrtTime(currentTime);
+    const end = formatSrtTime(currentTime + duration);
+
+    // 字幕行の改行（必要ならwrapWithKuromojiの代わりにwrapText等を使う）
+    //let wrapped = srtsentence; // 必要に応じてラップ処理
+    let wrapped = await wrapWithKuromoji(srtsentence, 16);
+
+    wrapped = cleanUpWrappedText(wrapped);
+    console.log(`📝 字幕生成中: ${wrapped}`);
+    srtContent += `${audioFiles.length}\n${start} --> ${end}\n${wrapped}\n\n`;
+    currentTime += duration;
   }
 
   const srtPath = `/tmp/output-${uuid}.srt`;
@@ -2433,7 +2742,7 @@ async function generateVoiceAndSRT(text, srttext,uuid) {
   console.log(`✅ 音声とSRT生成完了: ${outputWavPath}, ${srtPath}`);
 }
 
-
+// 時間フォーマット
 function formatSrtTime(seconds) {
   if (typeof seconds !== 'number' || isNaN(seconds) || seconds < 0) {
     throw new Error(`Invalid time value passed to formatSrtTime: ${seconds}`);
@@ -2444,7 +2753,6 @@ function formatSrtTime(seconds) {
   const iso = date.toISOString(); // "1970-01-01T00:00:12.345Z"
   return iso.substr(11, 12).replace('.', ',');
 }
-const ffmpeg = require("fluent-ffmpeg");
 
 // ffprobe で音声長取得
 async function getAudioDuration(filePath) {
@@ -2464,7 +2772,6 @@ function cleanUpWrappedText(text) {
     .join('\n');
 }
 
-const kuromoji = require('kuromoji'); 
 // 📌 インラインで定義：改行処理（形態素解析）
 function wrapWithKuromoji(text, maxLength = 16) {
   return new Promise((resolve, reject) => {
@@ -2516,108 +2823,34 @@ function splitLongSentenceWithKuromoji(tokenizer, sentence, maxLength = 32) {
   return result;
 }
 
-
 function countVisibleCharacters(str) {
   return [...str].length;
 }
 
-// async function wrapSubtitleText(text, maxLength = 16) {
-//   if (typeof text !== 'string' || !text.trim()) return '';
 
-//   const prompt =  `
-// 以下の文章を、字幕として読みやすいように、1行${maxLength}文字以内で改行してください。
-// 改行には必ず "\\N" を使ってください。
-// 可能な限り文章全体の意味が伝わるよう自然なところで改行してください。
+// 字幕と音声の区切りを実施
+function customSplit(text) {
+  // 「！」「？」の連続を最後の1文字に正規化（例: "？！？」 -> "？"）
+  text = text.replace(/(?:[！？]){2,}/g, (m) => m[m.length - 1]);
 
-// ただし、「、」「。」などの句読点の直前や後であっても、1行の文字数制限(${maxLength}文字以内)を最優先してください。
+  // 区切り位置（句点・読点・句末記号・閉じ括弧の直後、開き括弧の直前）
+  // 「、」「。」「！」「？」の直後で分割、また「」や『』の開きの直前で分割する
+  const pattern = /(?<=、|。|！|？|」|』)|(?=「|『)/g;
 
-// 文章:
-// ${text}
-// `;
-
-//   try {
-//     const response = await openai.chat.completions.create({
-//       model: 'gpt-3.5-turbo',
-//       messages: [{ role: 'user', content: prompt }],
-//       temperature: 0.7,
-//     });
-
-//     let output = response.choices[0].message.content;
-//     output = output.replace(/\r?\n/g, ''); // 改行除去
-//     console.log('📤 ChatGPTからの生出力:', output);
-//     const lines = output.split('\\N');
-
-//     // ✅ 全角長チェックに修正
-//     const allLinesValid = lines.every(line => countVisibleCharacters(line.trim()) <= maxLength);
-
-//     if (!allLinesValid) {
-//       console.warn('⚠ ChatGPT output exceeded max full-width length. Falling back to JS logic.');
-//       return fallbackLineWrap(text, maxLength);
-//     }
-
-//     return lines.map(line => line.trim()).join('\\N');
-
-//   } catch (err) {
-//     console.error('❌ ChatGPT API エラー:', err.message);
-//     console.log(`エラーになったので、JSロジックにて改行処理を実施`);
-//     return fallbackLineWrap(text, maxLength);
-//   }
-// }
-
-// // ✅ JS側のフェイルセーフ改行処理
-// function fallbackLineWrap(text, maxLength) {
-//   if (typeof text !== 'string') return '';
-
-//   const avoidBreakingWords = ['EN', 'Official', 'Store', 'NIJISANJI'];
-//   const result = [];
-//   let buffer = '';
-
-//   // 一旦、「、」「。」の後で仮の分割を入れてから処理
-//   const preSplit = text
-//     .replace(/(、|。)/g, '$1|') // 「、」「。」の直後に仮の区切り記号（|）を挿入
-//     .split('|')                 // その記号で分割
-//     .map(s => s.trim())         // 前後の空白削除
-//     .filter(Boolean);           // 空文字除去
-
-//   for (let fragment of preSplit) {
-//     const newBuffer = (buffer + fragment).trim();
-
-//     if (
-//       avoidBreakingWords.some(w => fragment.includes(w)) ||
-//       countVisibleCharacters(newBuffer) > maxLength
-//     ) {
-//       if (buffer) result.push(buffer.trim());
-//       buffer = fragment;
-//     } else {
-//       buffer = newBuffer;
-//     }
-//   }
-
-//   if (buffer) result.push(buffer.trim());
-
-//   return result.join('\\N');
-// }
-
-// countVisibleCharacters は全角＝2, 半角＝1でカウント
-// function countVisibleCharacters(text) {
-//   let count = 0;
-//   for (const char of text) {
-//     count += /[ -~]/.test(char) ? 1 : 2; // 半角なら1, 全角なら2
-//   }
-//   return count;
-// }
-
-
-
-
-// SRT 時間形式に変換
-function formatTime(seconds) {
-  const ms = Math.floor((seconds % 1) * 1000);
-  const s = Math.floor(seconds % 60);
-  const m = Math.floor((seconds / 60) % 60);
-  const h = Math.floor(seconds / 3600);
-  return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
+  return text
+    .split(pattern)
+    .map(s => s.trim())
+    .filter(Boolean);
 }
+
+// // SRT 時間形式に変換
+// function formatTime(seconds) {
+//   const ms = Math.floor((seconds % 1) * 1000);
+//   const s = Math.floor(seconds % 60);
+//   const m = Math.floor((seconds / 60) % 60);
+//   const h = Math.floor(seconds / 3600);
+//   return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
+// }
 
 function pad(n, z = 2) {
   return n.toString().padStart(z, "0");
@@ -2654,52 +2887,54 @@ async function detectSilenceStart(audioPath) {
   });
 }
 
-async function detectInitialSilence(audioPath) {
-  const cmd = `ffmpeg -i ${audioPath} -af silencedetect=noise=-40dB:d=0.1 -f null -`;
-  const { stdout, stderr } = await exec(cmd);
+// async function detectInitialSilence(audioPath) {
+//   const cmd = `ffmpeg -i ${audioPath} -af silencedetect=noise=-40dB:d=0.1 -f null -`;
+//   const { stdout, stderr } = await exec(cmd);
 
-  // stderrが文字列じゃなかったら、無理やり中身読む
-  let stderrString;
-  if (typeof stderr === 'string') {
-    stderrString = stderr;
-  } else if (Buffer.isBuffer(stderr)) {
-    stderrString = stderr.toString('utf-8');
-  } else if (typeof stderr?.read === 'function') {
-    // ストリームっぽかったら、中身を全部読む
-    stderrString = await streamToString(stderr);
-  } else {
-    console.error('stderrが想定外の型です:', stderr);
-    stderrString = '';
-  }
-  
-  console.log('🔍 ffmpeg無音検出ログ:', stderrString);
+//   // stderrが文字列じゃなかったら、無理やり中身読む
+//   let stderrString;
+//   if (typeof stderr === 'string') {
+//     stderrString = stderr;
+//   } else if (Buffer.isBuffer(stderr)) {
+//     stderrString = stderr.toString('utf-8');
+//   } else if (typeof stderr?.read === 'function') {
+//     // ストリームっぽかったら、中身を全部読む
+//     stderrString = await streamToString(stderr);
+//   } else {
+//     console.error('stderrが想定外の型です:', stderr);
+//     stderrString = '';
+//   }
 
-  const silenceStartMatch = stderrString.match(/silence_start: (\d+(\.\d+)?)/);
-  const silenceEndMatch = stderrString.match(/silence_end: (\d+(\.\d+)?)/);
+//   console.log('🔍 ffmpeg無音検出ログ:', stderrString);
 
-  if (silenceStartMatch && silenceEndMatch) {
-    const silenceEnd = parseFloat(silenceEndMatch[1]);
-    console.log(`🔍 無音検出: ${silenceEnd}秒`);
-    return silenceEnd;
-  } else {
-    console.log(`🔍 無音なし検出`);
-    return 0;
-  }
-}
-function streamToString(stream) {
-  const chunks = [];
-  return new Promise((resolve, reject) => {
-    stream.on('data', (chunk) => {
-      if (typeof chunk === 'string') {
-        chunks.push(Buffer.from(chunk));
-      } else {
-        chunks.push(chunk);
-      }
-    });
-    stream.on('error', reject);
-    stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-  });
-}
+//   const silenceStartMatch = stderrString.match(/silence_start: (\d+(\.\d+)?)/);
+//   const silenceEndMatch = stderrString.match(/silence_end: (\d+(\.\d+)?)/);
+
+//   if (silenceStartMatch && silenceEndMatch) {
+//     const silenceEnd = parseFloat(silenceEndMatch[1]);
+//     console.log(`🔍 無音検出: ${silenceEnd}秒`);
+//     return silenceEnd;
+//   } else {
+//     console.log(`🔍 無音なし検出`);
+//     return 0;
+//   }
+// }
+// function streamToString(stream) {
+//   const chunks = [];
+//   return new Promise((resolve, reject) => {
+//     stream.on('data', (chunk) => {
+//       if (typeof chunk === 'string') {
+//         chunks.push(Buffer.from(chunk));
+//       } else {
+//         chunks.push(chunk);
+//       }
+//     });
+//     stream.on('error', reject);
+//     stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+//   });
+// }
+
+// すでに記事を動画化しているか判定
 async function alreadyProcessed(articleLink) {
   const encodedURL = encodeURIComponent(articleLink);
 
@@ -2716,350 +2951,110 @@ async function alreadyProcessed(articleLink) {
 }
 
 
-// // 長文を最大3行・12文字ずつに改行（句読点優先）
-// function wrapSubtitleText(text, maxLineLength = 20, maxLines = 15) {
-//   const lines = [];
+// VTuberデータ入稿機能
+exports.addVtuberData = functions.https.onRequest(async (request, response) => {
+  // CORS設定
+  response.set('Access-Control-Allow-Origin', '*');
+  response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.set('Access-Control-Allow-Headers', 'Content-Type');
 
-//   // 句読点や助詞、スペースなどで切れる位置を優先
-//   //const breakChars = ['。', '、', '！', '？', '・', ' ', '　'];
-//   const breakChars = ['。', '、', '！', '？', '・', '\N', '】', '」'];
-//   //const breakChars = ['。', '、', '！', '？', '・'];
-//   //const breakChars = ['。'];
+  if (request.method === 'OPTIONS') {
+    response.status(200).send('');
+    return;
+  }
 
-//   let remaining = text;
+  if (request.method !== 'POST') {
+    response.status(405).json({
+      success: false,
+      error: 'Method not allowed. Use POST.'
+    });
+    return;
+  }
 
-//   for (let i = 0; i < maxLines && remaining.length > 0; i++) {
-//     // まず最大長の部分を取り出す
-//     let sliceEnd = Math.min(maxLineLength, remaining.length);
-//     let candidate = remaining.slice(0, sliceEnd);
+  try {
+    const newVtuberData = request.body;
+    console.log('受信データ:', newVtuberData);
 
-//     // 最後の breakChar の位置で改行する
-//     let bestBreak = -1;
-//     for (let j = candidate.length - 1; j >= 0; j--) {
-//       if (breakChars.includes(candidate[j])) {
-//         bestBreak = j + 1;
-//         break;
-//       }
-//     }
+    // 必須フィールドの検証
+    const requiredFields = ['name', 'channeID', 'office'];
+    const missingFields = requiredFields.filter(field => !newVtuberData[field]);
+    if (missingFields.length > 0) {
+      response.status(400).json({
+        success: false,
+        error: `Missing required fields: ${missingFields.join(', ')}`
+      });
+      return;
+    }
 
-//     // breakCharが見つからない → 強制的に13文字
-//     if (bestBreak === -1) bestBreak = sliceEnd;
+    // データベース参照を取得
+    const vtuberRef = admin.database().ref('vtuber');
+    const snapshot = await vtuberRef.once('value');
+    const existingData = snapshot.val() || {};
 
-//     const line = remaining.slice(0, bestBreak).trim();
-//     lines.push(line);
-//     remaining = remaining.slice(bestBreak).trim();
-//   }
+    // 重複チェック
+    const duplicateChecks = [];
 
-//   return lines.join("\\N");
-// }
+    // チャンネルID重複チェック
+    for (const [key, data] of Object.entries(existingData)) {
+      if (data.channeID === newVtuberData.channeID) {
+        duplicateChecks.push({
+          type: 'channeID',
+          existingKey: key,
+          existingName: data.name,
+          value: newVtuberData.channeID
+        });
+      }
 
+      // Twitterネーム重複チェック（両方に値がある場合のみ）
+      if (newVtuberData.twitterName && data.twitterName &&
+        data.twitterName === newVtuberData.twitterName) {
+        duplicateChecks.push({
+          type: 'twitterName',
+          existingKey: key,
+          existingName: data.name,
+          value: newVtuberData.twitterName
+        });
+      }
+    }
 
-// async function generateSRTFromVoicevoxTiming(text, srtPath, speakerId = 1,synthesisRes,query) {
+    if (duplicateChecks.length > 0) {
+      response.status(400).json({
+        success: false,
+        error: 'Duplicate data found',
+        duplicates: duplicateChecks
+      });
+      return;
+    }
 
+    // 新しいキーを生成（既存の最大数値キー + 1）
+    const numericKeys = Object.keys(existingData)
+      .map(key => parseInt(key))
+      .filter(num => !isNaN(num));
 
-//   const tmpAudioPath = "/tmp/voice.wav";
-//   await fs.promises.writeFile(tmpAudioPath, Buffer.from(synthesisRes.data));
+    const nextKey = numericKeys.length > 0 ? Math.max(...numericKeys) + 1 : 1;
 
-//   // 3. 無音時間を検出
-//   const silenceStart = await detectSilenceStart(tmpAudioPath);
-//   console.log('⏱️ silenceStart:', silenceStart, '秒');
+    // データにタイムスタンプを追加
+    const dataToAdd = {
+      ...newVtuberData,
+      createdAt: new Date().toISOString(),
+      updateTime: new Date().toISOString()
+    };
 
-//   // 4. 実際の音声の長さを取得
-//   const realAudioDuration = await getAudioDuration(tmpAudioPath);
-//   console.log('⏱️ realAudioDuration:', realAudioDuration, '秒');
+    // データベースに追加
+    await vtuberRef.child(nextKey.toString()).set(dataToAdd);
 
-//   // 5. モーラ＋pause分長さを集計
-//   const rawLengths = [];
-//   for (const phrase of query.accent_phrases) {
-//     for (const mora of phrase.moras) {
-//       rawLengths.push((mora.consonant_length || 0) + (mora.vowel_length || 0));
-//     }
-//     if (phrase.pause_mora) {
-//       rawLengths.push(phrase.pause_mora.vowel_length || 0.3);
-//     }
-//   }
+    response.json({
+      success: true,
+      message: 'VTuber data added successfully',
+      addedKey: nextKey.toString(),
+      addedData: dataToAdd
+    });
 
-//   const estimatedDuration = rawLengths.reduce((a, b) => a + b, 0);
-//   const scale = realAudioDuration / estimatedDuration;
-//   const adjustedScale = scale * (query.speedScale || 1);//scale ;//* (query.speedScale || 1);
-
-//   const scaledLengths = rawLengths.map(l => l * adjustedScale);
-//   const cumTimes = [0];
-//   for (let i = 0; i < scaledLengths.length; i++) {
-//     cumTimes.push(cumTimes[i] + scaledLengths[i]);
-//   }
-
-//   // 6. 文単位に分ける
-//   // const sentences = text.split(/(?<=[。！？])/).map(s => s.trim()).filter(Boolean);
-//   const sentences = text
-//   .split(/(?<=[。！？、・…‥\n])|(?=そして|しかし|つまり|そのため|なお|ただし)/)
-//   .map(s => s.trim())
-//   .filter(Boolean);
-//   const moraCountPerSentence = [];
-//   let moraIdx = 0;
-//   for (const sentence of sentences) {
-//     let count = 0;
-//     while (count < sentence.length && moraIdx < rawLengths.length) {
-//       count++;
-//       moraIdx++;
-//     }
-//     moraCountPerSentence.push(count);
-//   }
-
-//   // 無音検出
-//   const initialSilence = await detectInitialSilence(tmpAudioPath);
-
-//   // 7. SRTファイル作成
-//   const OFFSET = silenceStart > 0 ? -silenceStart-3 : -3;
-//   // const OFFSET = -silenceStart;
-//   let startMora = 0;
-//   const srtLines = [];
-//   srtLines.push(''); 
-//   const totalAudioDuration = realAudioDuration + silenceStart; // 音声と無音を合わせた合計時間
-//   let adjustedTimeScale = realAudioDuration / totalAudioDuration; // 全体の時間スケール調整
-
-//   for (let i = 0; i < sentences.length; i++) {
-//     const count = moraCountPerSentence[i];
-//     const endMora = startMora + count;
-
-//     // 無音時間と全体スケールに基づいて時間を調整
-//     const startTime = Math.max(cumTimes[startMora] - initialSilence + OFFSET, 0);
-//     const endTime   = Math.max(cumTimes[endMora] + initialSilence - OFFSET, 0);
-//     // const startTime = Math.max(cumTimes[startMora] + OFFSET, 0);
-//     // const endTime   = Math.max(cumTimes[endMora] + OFFSET, 0);
-
-//     // ここで調整後のタイムスケールを適
-//     const adjustedStart = startTime * adjustedTimeScale;
-//     const adjustedEnd = endTime * adjustedTimeScale;
-
-//     const start = formatTime(adjustedStart);
-//     const end = formatTime(adjustedEnd);
-//     const wrapped = wrapSubtitleText(sentences[i]);
-
-//     srtLines.push(`${i+1}\n${start} --> ${end}\n  ${wrapped}\n`);
-//     startMora = endMora;
-//   }
-
-//   await fs.promises.writeFile(srtPath, srtLines.join("\n\n"), "utf-8");
-//   console.log('✅ 字幕書き出し完了:', srtPath);
-// }
-
-// // 時間を "00:00:00,000" 形式にする
-// function formatTime(seconds) {
-//   const date = new Date(seconds * 1000);
-//   const hh = String(date.getUTCHours()).padStart(2, '0');
-//   const mm = String(date.getUTCMinutes()).padStart(2, '0');
-//   const ss = String(date.getUTCSeconds()).padStart(2, '0');
-//   const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
-//   return `${hh}:${mm}:${ss},${ms}`;
-// }
-
-// function pad(n, z = 2) {
-//   return n.toString().padStart(z, "0");
-// }
-
-// exports.generateBlogVideoFromLatestNews = async (req, res) => {
-//   // if (req.method !== 'POST') {
-//   //   res.status(405).send('Method Not Allowed');
-//   //   return;
-//   // }
-//   const uuid = uuidv4();
-//   try {
-//     const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber+OR+%E3%83%9B%E3%83%AD%E3%83%A9%E3%82%A4%E3%83%96+OR+%E3%81%AB%E3%81%98%E3%81%95%E3%82%93%E3%81%98&hl=ja&gl=JP&ceid=JP:ja');
-//     //const feed = await parser.parseURL('https://news.google.com/rss/search?q=VTuber&hl=ja&gl=JP&ceid=JP:ja');
-
-//       // pubDateでソート
-//     const sortedItems = feed.items.sort((a, b) => {
-//       return new Date(b.pubDate) - new Date(a.pubDate); // 新しい順
-//     });
-  
-//     const latestItem = sortedItems[0];
-//     console.log(latestItem.title);
-//     console.log(latestItem.link);
-//     const title = latestItem.title;
-//     const articleLink = latestItem.link;
-
-//     const isAlreadyProcessed = await alreadyProcessed(articleLink);
-//     if (isAlreadyProcessed) {
-//       console.log(`スキップ：すでに生成済み - > ${articleLink}`);
-
-//       res.status(200).send(`スキップ：すでに生成済み - > ${articleLink}`);
-//       return; // 処理終了
-//     }else{
-//       console.log(`スタート：動画を生成します - > ${articleLink}`);
-//     }
-//     finalURL = articleLink;
-//     const articleText = await getArticleContent(articleLink);
-//     let prompt = "";
-//     console.log("記事:", articleText);
-    
-//     const status = articleText ? 'OK' : 'NG';
-//     const safeFileName = getSafeFileNameFromUrl(articleLink);
-    
-//     // 既存の文字列テンプレートの形を維持
-//     const filePath = `temp/${status}_${safeFileName}.txt`;
-//     const tempFilePath = `/tmp/${status}_${safeFileName}.txt`; 
-    
-//     // 一時ファイルとして保存
-//     await fs.promises.writeFile(tempFilePath, articleText || '', { encoding: 'utf8' });
-    
-//     // Cloud Storageにアップロード
-//     await storage.bucket(bucketName).upload(tempFilePath, {
-//       destination: filePath,
-//     });
-
-//     console.log(`記事を ${filePath} に保存しました`);
-//     if (articleText) {
-//       // スクレイピングした記事内容を元に台本を生成
-//       // await generateScript(articleText);
-//       prompt = `以下の記事に基づいて、youtubeにアップするニュース記事の台本を400文字程度で、Vtuberに関連するニュースのみを改行せず台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\n記事: ${articleText}`;
-//     } else {
-//       console.log('記事の取得に失敗しました。タイトルで生成します。');
-//       prompt = `以下の記事タイトルに基づいて、youtubeにアップするニュース記事の台本を400文字程度で、Vtuberに関連するニュースのみを改行せず台本の本文のみを出力してください（そのまま機械的に読み上げるので【ニュース記事】などのタイトルは不要）。\nタイトル: ${title}`;
-//     }
-
-//     const completion = await openai.chat.completions.create({
-//       model: 'gpt-3.5-turbo',
-//       messages: [{ role: 'user', content: prompt }],
-//       temperature: 0.7,
-//     });
-//     let blogText = completion.choices[0].message.content;
-//     console.log("Generated blog text:", blogText);
-
-
-//     const title_prompt = `先ほど生成した台本をYoutube動画にする際の動画タイトルを、再生数が取れそうな引きのある文言で15文字程度で作成してください。先ほどの台本：${blogText}`;
-//     const title_completion = await openai.chat.completions.create({
-//       model: 'gpt-3.5-turbo',
-//       messages: [{ role: 'user', content: title_prompt }],
-//       temperature: 0.7,
-//     });
-//     const videoTitle = title_completion.choices[0].message.content;
-
-
-//     // タイトルとブログ結合
-//     blogText = `${videoTitle}\n${blogText}\n以上のニュース詳細は概要欄にて。このチャンネルでは、このようなVtuber関連ニュースの解説を最速で投稿しています。よろしければ、チャンネル登録と高評価をお願いします。`;
-//     console.log("Generated blog text+Title:", blogText);
-
-//     const description_prompt = `先ほど生成した台本をYoutube動画にする際の動画のdescriptionを、200文字程度日本語で作成してください。先ほどの台本：${blogText}`;
-//     const description_completion = await openai.chat.completions.create({
-//       model: 'gpt-3.5-turbo',
-//       messages: [{ role: 'user', content: description_prompt }],
-//       temperature: 0.7,
-//     });
-//     let videoDescription = description_completion.choices[0].message.content;
-
-//     videoDescription = `${videoDescription}\n\nニュース詳細:${finalURL}\n`;
-//     console.log("Generated blog videoDescription:", videoDescription);
-
-//     const furigana_prompt = `以下の文章全てをVOICEVOXに正しく読ませるために、「Vtuber」を「ブイチューバー」など、英単語やアルファベットで書かれている名詞や英単語をすべて日本語の読み仮名（カタカナ）に変換してください。\n文章：${blogText}`;
-//     const furigana_completion = await openai.chat.completions.create({
-//       model: 'gpt-3.5-turbo',
-//       messages: [{ role: 'user', content: furigana_prompt }],
-//       temperature: 0.7,
-//     });
-//     const furiganaText = furigana_completion.choices[0].message.content;
-//     console.log("Generated Furigana text:", furiganaText);
-
-
-//     const tags_prompt = `先ほど生成した台本をYoutube動画にする際の動画のTagを、より検索にヒットしそうなもので、かつ絵文字を含まないで5つ程度リスト形式（['vtuber', 'ニュース']のような形）で作成してください。先ほどの台本：${blogText}`;
-//     const tags_completion = await openai.chat.completions.create({
-//       model: 'gpt-3.5-turbo',
-//       messages: [{ role: 'user', content: tags_prompt }],
-//       temperature: 0.7,
-//     });
-//     const videoTags = tags_completion.choices[0].message.content;
-
-//     // 1. VOICEVOX: 音声合成
-//     const speakerId = 1;
-
-//     const queryRes = await axios.post(
-//       `${VOICEVOX_ENGINE_URL}/audio_query?text=${encodeURIComponent(furiganaText)}&speaker=${speakerId}`,
-//       // `${VOICEVOX_ENGINE_URL}/audio_query?text=${encodeURIComponent("テスト文言")}&speaker=${speakerId}`,
-//       null,
-//       {
-//         headers: { 'Accept': 'application/json' },
-//         timeout: 600000 // 10秒など、妥当な値を設定
-//       }
-//     );
-//     let audioQuery = queryRes.data;
-//     audioQuery.speedScale = 1.2;
-//     audioQuery.volumeScale = 1.0; // ⭐️ 音量を固定
-//     // audioQuery.intonationScale = 0.9; // ⭐️ 抑揚を軽めに
-//     speedScale = audioQuery.speedScale;
-//     audioQuery.postPhonemeLength = 0.1;
-
-//     const synthRes = await axios.post(
-//       `${VOICEVOX_ENGINE_URL}/synthesis?speaker=${speakerId}`,
-//       audioQuery,
-//       {
-//         headers: { 'Content-Type': 'application/json' },
-//         responseType: 'arraybuffer',
-//         timeout: 600000,
-//       }
-//     );
-
-//     // 🎙️ 1. 一度ローカルに保存（/tmp）
-//     const audioFileName = `temp/audio-${uuid}.wav`;
-//     const tempAudioPath = `/tmp/audio-${uuid}.wav`; 
-//     await fs.promises.writeFile(tempAudioPath, synthRes.data);
-
-//     // ☁️ 2. それを GCS にアップロード
-//     await storage.bucket(bucketName).upload(tempAudioPath, {
-//       destination: audioFileName,
-//     });
-//     console.log('✅ 音声アップロード完了', audioFileName);
-
-//     // 3. 字幕生成
-//     // const totalDuration = audioQuery.outputSamplingRate > 0 ? synthRes.data.length / (audioQuery.outputSamplingRate * 2) : 30;
-//     const srtPathFileName = `temp/subtitle-${Date.now()}.srt`;
-//     const tempSrtPath = `/tmp/subtitle-${Date.now()}.srt`;
-//     await generateSRTFromVoicevoxTiming(blogText, tempSrtPath, 1,synthRes,audioQuery);
-//     console.log(`✅ 字幕生成完了: ${tempSrtPath}`);
-//     await storage.bucket(bucketName).upload(tempSrtPath, {
-//       destination: srtPathFileName,
-//     });
-//     console.log(`✅ 字幕アップロード完了: ${srtPathFileName}`);
-
-//     // 🎯 字幕用の .srt を GCS に保存（UTF-8エンコードで書き出し）
-//     const subtitleGcsUri = `gs://${bucketName}/${srtPathFileName}`;
-
-//     // 🎞️ 動画合成リクエスト
-//     const videoMergerUrl = 'https://video-merger-23130474318.asia-northeast1.run.app/merge';
-//     const videoGcsUri = 'gs://vtuber-335811.appspot.com/background.mp4';
-//     const outputFilePath = `merged-output/output-${uuid}.mp4`;
-//     const outputPath = `gs://${bucketName}/${outputFilePath}`;
-
-//     const mergeRes = await axios.post(videoMergerUrl, {
-//       videoUri: videoGcsUri,
-//       audioUri: `gs://${bucketName}/${audioFileName}`,
-//       outputUri: outputPath,
-//       subtitleSrtUri: subtitleGcsUri,
-//     }, {
-//       headers: { 'Content-Type': 'application/json' },
-//       timeout: 540000,
-//       maxContentLength: Infinity,
-//       maxBodyLength: Infinity,
-//     });
-
-//     console.log("Merge result:", mergeRes.data);
-//     // ✅ 後始末（音声・字幕ファイルを削除）
-//     await deleteGcsFile(bucketName, audioFileName);
-//     await deleteGcsFile(bucketName, srtPathFileName);
-
-
-//     // ~~~~~~~~~~~~~~~~~~~~
-//     // // ② アップロード実行（バケット名と動画ファイル名を指定）
-//     const videoId = await youtubeUpload(bucketName, outputFilePath,videoTitle,videoDescription,videoTags);
-//     await deleteGcsFile(bucketName, outputFilePath);
-
-//     res.status(200).send(`動画を生成してYouTubeにアップロードしました: https://youtu.be/${videoId}`);
-//     // // ~~~~~~~~~~~~~~~~~~~~
-
-//     // // 完了メッセージを返す
-//     // res.json({ message: '動画の生成が完了しました', videoUrl: mergeRes.data.url });
-
-//   } catch (error) {
-//     console.error('Error generating blog or merging video:', error?.response?.data || error);
-//     res.status(500).send('Error generating blog or merging video.');
-//   }
-// };
+  } catch (error) {
+    console.error('Add VTuber data error:', error);
+    response.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});

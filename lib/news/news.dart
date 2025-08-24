@@ -5,6 +5,8 @@ import '../googleCloudFunctions.dart';
 import '../widgets/cute_loading_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../webView.dart'; // ← WebViewPageをimport
+import 'package:provider/provider.dart';
+import '../common.dart'; // YoutubePlayerStateが定義されているファイル
 
 class NewsPage extends StatefulWidget {
   @override
@@ -107,27 +109,36 @@ class _NewsPageState extends State<NewsPage>
   }
 
   Widget buildNewsLayout(Map<String, dynamic> data) {
+    final hasVideo =
+        data['videoUrl'] != null && data['videoUrl'].toString().isNotEmpty;
+    final videoId = hasVideo ? extractYoutubeVideoId(data['videoUrl']) : null;
+
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => WebViewPage(
-              url: data['url'],
-              title: data['title'],
+        onTap: () {
+          // Card全体タップ時はWebView遷移
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => WebViewPage(
+                url: data['url'],
+                title: data['title'],
+              ),
             ),
-          ),
-        ),
+          );
+        },
         child: Row(
           children: [
             // テキスト部
             Expanded(
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: hasVideo ? 20 : 12, // 動画ボタンがある場合は縦パディング拡張
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -143,13 +154,48 @@ class _NewsPageState extends State<NewsPage>
                         fontSize: 13,
                       ),
                     ),
+                    if (hasVideo) ...[
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () {
+                          // 「動画でニュースを視聴する」タップ時のみ動画再生
+                          if (videoId != null) {
+                            Provider.of<YoutubePlayerState>(context,
+                                    listen: false)
+                                .setVideoId(videoId);
+                          }
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.play_circle_fill,
+                                  color: Colors.red, size: 18),
+                              SizedBox(width: 4),
+                              Text('動画でニュースを視聴する',
+                                  style: TextStyle(
+                                      color: Colors.red,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 6),
                     Text(
                       data['title'],
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Colors.black, // ← 黒に戻す
+                        color: Colors.black,
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                       ),
@@ -173,30 +219,50 @@ class _NewsPageState extends State<NewsPage>
                 ),
               ),
             ),
-            // サムネイル画像（右側）
+            // サムネイル画像（右側）＋動画再生ボタンレイヤー
             if (data['urlToImage'] != null && data['urlToImage'] != "")
               Padding(
                 padding: const EdgeInsets.only(
                     right: 12, left: 4, top: 12, bottom: 12),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    imageUrl: data['urlToImage'],
-                    width: 90,
-                    height: 90,
-                    fit: BoxFit.cover,
-                    errorWidget: (context, url, error) => Image.asset(
-                      'images/noImage1200300.png',
-                      width: 90,
-                      height: 90,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: CachedNetworkImage(
+                        imageUrl: data['urlToImage'],
+                        width: 90,
+                        height: 90,
+                        fit: BoxFit.cover,
+                        errorWidget: (context, url, error) => Image.asset(
+                          'images/noImage1200300.png',
+                          width: 90,
+                          height: 90,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
           ],
         ),
       ),
     );
+  }
+
+  /// YouTube動画IDを抽出（https://youtu.be/xxxxxx, https://www.youtube.com/watch?v=xxxxxx どちらも対応）
+  String? extractYoutubeVideoId(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return null;
+    // youtu.be/xxxxxx
+    if (uri.host.contains('youtu.be')) {
+      return uri.pathSegments.isNotEmpty ? uri.pathSegments[0] : null;
+    }
+    // youtube.com/watch?v=xxxxxx
+    if (uri.host.contains('youtube.com')) {
+      return uri.queryParameters['v'];
+    }
+    return null;
   }
 
   /// 端末ローカルタイムゾーンで日付を表示

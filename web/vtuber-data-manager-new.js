@@ -265,7 +265,7 @@ async function importData() {
         // データ形式を判定
         let format = 'json';
         let parsedData = data;
-        if (data.startsWith('channelId,') || data.includes(',')) {
+        if (data.startsWith('channeId,') || data.includes(',')) {
             format = 'csv';
         }
         if (format === 'json') {
@@ -314,11 +314,11 @@ async function importData() {
 }
 async function handleAddVtuber(event) {
     event.preventDefault();
-    let channelId = document.getElementById('channelId').value.trim();
+    let channeID = document.getElementById('channelId').value.trim();
     // ここでハンドル名なら変換
-    if (channelId.startsWith('@')) {
+    if (channeID.startsWith('@')) {
         try {
-            channelId = await convertHandleToChannelId(channelId);
+            channeID = await convertHandleToChannelId(channeID);
         } catch (e) {
             showStatus('❌ チャンネルID変換に失敗しました: ' + e.message, 'error');
             return false;
@@ -386,7 +386,7 @@ async function handleAddVtuber(event) {
         debut = debutInput.value.trim();
     }
 
-    if (!channelId || !name || !birthday || officeFlg === '') {
+    if (!channeID || !name || !birthday || officeFlg === '') {
         showStatus('❌ チャンネルID・名前・誕生日・事務所所属フラグは必須項目です。', 'error');
         return false;
     }
@@ -400,7 +400,7 @@ async function handleAddVtuber(event) {
     try {
         // 送信データを事前に出力
         const payload = {
-            channelId,
+            channeID: channeID, // ←ここで変換
             name,
             twitterName,
             office: office == null ? '' : office,
@@ -610,10 +610,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 window.loadOfficeOptions = loadOfficeOptions;
-
-
-
-
 
 
 // 環境に応じてAPIベースURLを設定

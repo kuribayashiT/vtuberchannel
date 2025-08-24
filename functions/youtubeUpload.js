@@ -7,7 +7,7 @@ const { google } = require('googleapis');
  * @param {string} bucketName - Cloud Storageバケット名
  * @param {string} fileName - アップロードしたい動画ファイル名 (例: output.mp4)
  */
-async function youtubeUpload(bucketName, fileName,videoTitle,videoDescription,videoTags) {
+async function youtubeUpload(bucketName, fileName, videoTitle, videoDescription, videoTags, thumbnail) {
   const localPath = path.join('/tmp', path.basename(fileName)); // ✅ tmpに保存
   //const localPath = fileName;
 
@@ -30,16 +30,28 @@ async function youtubeUpload(bucketName, fileName,videoTitle,videoDescription,vi
   // アップロードリクエスト
   console.log('videoTitle:', videoTitle);
   console.log('videoTags:', videoTags);
+  if (!videoTitle || typeof videoTitle !== 'string' || videoTitle.trim() === '') {
+    throw new Error('動画タイトルが空です');
+  }
+  // 100文字以内に制限
+  if (videoTitle.length > 100) {
+    videoTitle = videoTitle.slice(0, 100);
+  }
+  const snippet = {
+    title: videoTitle,
+    description: videoDescription,
+    tags: videoTags,
+  };
+
+  if (thumbnail && thumbnail !== '') {
+    snippet.thumbnails = thumbnail;
+  }
   const res = await youtube.videos.insert({
     part: 'snippet,status',
     requestBody: {
-      snippet: {
-        title: videoTitle,
-        description: videoDescription,
-        tags: videoTags,
-      },
+      snippet,
       status: {
-        privacyStatus: 'public', // or 'public'
+        privacyStatus: 'public', // or 'unlisted'
       },
     },
     media: {
