@@ -1027,73 +1027,6 @@ class AdHelper {
     _nativeAds.clear();
     _currentNativeAdIndex = 0;
   }
-  // List<NativeAd?> nativeAds = [];
-  // void loadNativeAds() {
-  //   for (int i = 0; i < 1; i++) {
-  //     if (Platform.isIOS) {
-  //       NativeAd(
-  //         adUnitId: AdHelper.nativeAdUnitId,
-  //         request: const AdRequest(),
-  //         factoryId: 'listTile',
-  //         //nativeTemplateStyle: AdHelper.nativeTemplateStyle,
-  //         listener: NativeAdListener(
-  //           onAdLoaded: (ad) {
-  //             nativeAds.add(ad as NativeAd); // リストに広告を追加
-  //           },
-  //           onAdFailedToLoad: (ad, err) {
-  //             nativeAds.add(null);
-  //           },
-  //         ),
-  //       ).load();
-  //     } else {
-  //       NativeAd(
-  //         adUnitId: AdHelper.nativeAdUnitId,
-  //         request: const AdRequest(),
-  //         // factoryId: 'googleNativeAdsCard',
-  //         //factoryId: 'listTile',
-  //         nativeTemplateStyle: AdHelper.nativeTemplateStyle,
-  //         listener: NativeAdListener(
-  //           onAdLoaded: (ad) {
-  //             nativeAds.add(ad as NativeAd); // リストに広告を追加
-  //           },
-  //           onAdFailedToLoad: (ad, err) {
-  //             nativeAds.add(null);
-  //           },
-  //           // Called when a click is recorded for a NativeAd.
-  //           onAdClicked: (ad) {},
-  //           // Called when an impression occurs on the ad.
-  //           onAdImpression: (ad) {},
-  //           // Called when an ad removes an overlay that covers the screen.
-  //           onAdClosed: (ad) {},
-  //           // Called when an ad opens an overlay that covers the screen.
-  //           onAdOpened: (ad) {},
-  //           // For iOS only. Called before dismissing a full screen view
-  //           onAdWillDismissScreen: (ad) {},
-  //           // Called when an ad receives revenue value.
-  //           onPaidEvent: (ad, valueMicros, precision, currencyCode) {},
-  //         ),
-  //       ).load();
-  //     }
-  //   }
-  // }
-
-  // int _currentNativeAdIndex = 0;
-  // Widget buildNativeAdWidgetNextAd() {
-  //   if (nativeAds.isEmpty || nativeAds.length < _currentNativeAdIndex) {
-  //     return const SizedBox();
-  //   }
-  //   if (bannerAds.length - 1 == _currentNativeAdIndex) {
-  //     loadNativeAds();
-  //   }
-  //   final ad = nativeAds[_currentNativeAdIndex];
-  //   _currentNativeAdIndex =
-  //       (_currentNativeAdIndex + 1) % nativeAds.length; // 次の広告のインデックスを更新
-  //   if (ad != null) {
-  //     return AdWidget(ad: ad);
-  //   } else {
-  //     return const SizedBox();
-  //   }
-  // }
 
   // Banner Ads
   List<BannerAd?> bannerAds = [];
@@ -1211,6 +1144,79 @@ class AdHelper {
   Future<void> _saveTnterCount(int newCount) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('interAdCount', newCount);
+  }
+
+  /// NativeAdインスタンスを生成して返す（AdWidgetは返さない）
+  NativeAd buildNextNativeAd() {
+    final ad = NativeAd(
+      adUnitId: AdHelper.nativeAdUnitId,
+      request: const AdRequest(),
+      factoryId: 'listTile',
+      listener: NativeAdListener(
+        onAdLoaded: (ad) {},
+        onAdFailedToLoad: (ad, err) {
+          ad.dispose();
+        },
+      ),
+    );
+    ad.load();
+    return ad;
+  }
+}
+
+class NativeAdContainer extends StatefulWidget {
+  final double width;
+  final double height;
+  const NativeAdContainer({required this.width, required this.height, Key? key})
+      : super(key: key);
+
+  @override
+  State<NativeAdContainer> createState() => _NativeAdContainerState();
+}
+
+class _NativeAdContainerState extends State<NativeAdContainer> {
+  NativeAd? _ad;
+  bool _isLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ad = NativeAd(
+      adUnitId: AdHelper.nativeAdUnitId,
+      request: const AdRequest(),
+      factoryId: 'listTile',
+      listener: NativeAdListener(
+        onAdLoaded: (ad) {
+          setState(() {
+            _isLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          setState(() {
+            _isLoaded = false;
+          });
+        },
+      ),
+    )..load();
+  }
+
+  @override
+  void dispose() {
+    _ad?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isLoaded) {
+      return const SizedBox.shrink();
+    }
+    return SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: _ad == null ? const SizedBox.shrink() : AdWidget(ad: _ad!),
+    );
   }
 }
 

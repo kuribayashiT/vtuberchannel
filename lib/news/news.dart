@@ -4,9 +4,9 @@ import 'package:vtuberchannel/main.dart';
 import '../googleCloudFunctions.dart';
 import '../widgets/cute_loading_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../webView.dart'; // ← WebViewPageをimport
+import '../webView.dart';
 import 'package:provider/provider.dart';
-import '../common.dart'; // YoutubePlayerStateが定義されているファイル
+import '../common.dart';
 
 class NewsPage extends StatefulWidget {
   @override
@@ -24,11 +24,13 @@ class _NewsPageState extends State<NewsPage>
   void initState() {
     super.initState();
     _newsData = getNewsData();
+    adHelper.loadNativeAds();
   }
 
   Future<void> _refreshData() async {
     setState(() {
       _newsData = getNewsData();
+      adHelper.loadNativeAds();
     });
   }
 
@@ -46,7 +48,10 @@ class _NewsPageState extends State<NewsPage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    double screenWidth = MediaQuery.of(context).size.width;
+    final double adHorizontalPadding = 16.0;
+    final double adWidth = MediaQuery.of(context).size.width - 32;
+    final double adHeight = adWidth * 0.9; // 0.8倍や1.0倍など大きめに
+
     return SafeArea(
       top: true,
       bottom: true,
@@ -71,34 +76,82 @@ class _NewsPageState extends State<NewsPage>
               } else {
                 List<dynamic> data = snapshot.data ?? [];
                 if (data.isEmpty) {
-                  return const CuteEmptyWidget(
-                    message: 'ニュースデータの取得に失敗しました（空データ）',
-                    icon:
-                        Icon(Icons.error_outline, size: 56, color: Colors.red),
-                    color: Colors.red,
+                  return ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      Container(
+                        height: MediaQuery.of(context).size.height * 0.6,
+                        alignment: Alignment.center,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CuteEmptyWidget(
+                                message: 'ニュースデータの取得に失敗しました（空データ）',
+                                icon: Icon(Icons.error_outline,
+                                    size: 56, color: Colors.red),
+                                color: Colors.red,
+                              ),
+                              const SizedBox(height: 24),
+                              ElevatedButton.icon(
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('再読み込み'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 24, vertical: 12),
+                                ),
+                                onPressed: () {
+                                  _refreshData();
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   );
                 } else {
+                  // 5つに1つ広告を挿入（NativeAd版）
+                  final int adInterval = 5;
+                  final int adCount = (data.length / adInterval).floor();
+                  final int itemCount = data.length + adCount;
                   return ListView.builder(
-                      physics: const ClampingScrollPhysics(),
-                      itemCount: data.length,
-                      itemBuilder: (context, index) {
-                        return Column(children: [
-                          SizedBox(
-                              child: buildNewsLayout(
-                                  data[index] as Map<String, dynamic>)),
-                          if (kIsWeb)
-                            if (index % YoutubeNativeADInterval == 0)
-                              if (adHelper.bannerAds.isNotEmpty)
-                                Align(
-                                  alignment: Alignment.topCenter,
-                                  child: SizedBox(
-                                    width: screenWidth,
-                                    height: 120,
-                                    child: adHelper.buildBannerAdWidgetNextAd(),
-                                  ),
-                                ),
-                        ]);
-                      });
+                    physics: const ClampingScrollPhysics(),
+                    itemCount: itemCount,
+                    itemBuilder: (context, index) {
+                      if (index > 0 && index % (adInterval + 1) == adInterval) {
+                        final nativeAdWidget =
+                            adHelper.buildNextNativeAdWidget();
+                        if (nativeAdWidget is SizedBox) {
+                          return const SizedBox(height: 24);
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 16),
+                          child: Container(
+                            width: adWidth,
+                            height: adHeight,
+                            alignment: Alignment.center,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: nativeAdWidget,
+                            ),
+                          ),
+                        );
+                      }
+                      final int dataIndex =
+                          index - (index / (adInterval + 1)).floor();
+                      return SizedBox(
+                        child: buildNewsLayout(
+                            data[dataIndex] as Map<String, dynamic>),
+                      );
+                    },
+                  );
                 }
               }
             },
@@ -120,7 +173,6 @@ class _NewsPageState extends State<NewsPage>
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
-          // Card全体タップ時はWebView遷移
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => WebViewPage(
@@ -132,12 +184,11 @@ class _NewsPageState extends State<NewsPage>
         },
         child: Row(
           children: [
-            // テキスト部
             Expanded(
               child: Padding(
                 padding: EdgeInsets.symmetric(
                   horizontal: 16,
-                  vertical: hasVideo ? 20 : 12, // 動画ボタンがある場合は縦パディング拡張
+                  vertical: hasVideo ? 20 : 12,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -158,7 +209,6 @@ class _NewsPageState extends State<NewsPage>
                       const SizedBox(height: 8),
                       GestureDetector(
                         onTap: () {
-                          // 「動画でニュースを視聴する」タップ時のみ動画再生
                           if (videoId != null) {
                             Provider.of<YoutubePlayerState>(context,
                                     listen: false)
@@ -219,7 +269,6 @@ class _NewsPageState extends State<NewsPage>
                 ),
               ),
             ),
-            // サムネイル画像（右側）＋動画再生ボタンレイヤー
             if (data['urlToImage'] != null && data['urlToImage'] != "")
               Padding(
                 padding: const EdgeInsets.only(
@@ -250,22 +299,18 @@ class _NewsPageState extends State<NewsPage>
     );
   }
 
-  /// YouTube動画IDを抽出（https://youtu.be/xxxxxx, https://www.youtube.com/watch?v=xxxxxx どちらも対応）
   String? extractYoutubeVideoId(String url) {
     final uri = Uri.tryParse(url);
     if (uri == null) return null;
-    // youtu.be/xxxxxx
     if (uri.host.contains('youtu.be')) {
       return uri.pathSegments.isNotEmpty ? uri.pathSegments[0] : null;
     }
-    // youtube.com/watch?v=xxxxxx
     if (uri.host.contains('youtube.com')) {
       return uri.queryParameters['v'];
     }
     return null;
   }
 
-  /// 端末ローカルタイムゾーンで日付を表示
   String _formatLocalTime(dynamic publishedAt) {
     if (publishedAt == null) return "";
     DateTime dt;

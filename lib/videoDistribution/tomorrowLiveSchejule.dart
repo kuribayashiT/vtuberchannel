@@ -7,8 +7,7 @@ import '../googleCloudFunctions.dart';
 import 'videoDistribution.dart';
 import '../common.dart';
 import '../widgets/cute_loading_widget.dart';
-
-bool showTomorrowFirstView = true;
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 class TomorrowLiveScheduleTab extends StatefulWidget
     implements PreferredSizeWidget {
@@ -16,35 +15,28 @@ class TomorrowLiveScheduleTab extends StatefulWidget
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
   @override
-  _TomorrowLiveScheduleTabState createState() =>
+  State<TomorrowLiveScheduleTab> createState() =>
       _TomorrowLiveScheduleTabState();
 }
 
-class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
-  late Future<List<dynamic>> dataForTomorrow;
-  late Future<List<List<dynamic>>> dataForSeparateTomorrow;
+class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab>
+    with AutomaticKeepAliveClientMixin {
+  List<dynamic> tomorrowData = [];
+  List<List<dynamic>> tomorrowHourData = List.generate(24, (_) => []);
+  bool isLoading = true;
   bool _isMounted = false;
   late SelectedCategorie myState;
   late FavoriteVideoData myFavorteState;
   late PushRegisterState myPushState;
-  ConstrainedBox adContainer =
-      ConstrainedBox(constraints: const BoxConstraints());
+  bool showFirstView = true;
 
-  Widget videoWidget(Map<String, dynamic> data, DateTime now, double height) {
-    return VideoWidget(
-      data: data,
-      now: now,
-      height: height,
-      videoUrl: '',
-    );
-  }
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
     _isMounted = true;
-    dataForTomorrow = getAllVideoData();
-    dataForSeparateTomorrow = getAllVideoSeparateData();
     myState = Provider.of<SelectedCategorie>(context, listen: false);
     myState.addListener(_onDataUpdated);
     myFavorteState = Provider.of<FavoriteVideoData>(context, listen: false);
@@ -53,9 +45,17 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
     myPushState.addListener(_onDataUpdated);
 
     if (!kIsWeb) {
-      adHelper.buildNextNativeAdWidget();
       adHelper.loadBannerAds();
     }
+    fetchData();
+  }
+
+  // 毎回新しいNativeAdを生成して返す
+  Widget getNextNativeAdWidget({double? width, double? height}) {
+    return NativeAdContainer(
+      width: width ?? double.infinity,
+      height: height ?? 320,
+    );
   }
 
   @override
@@ -69,86 +69,52 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
   }
 
   void _onDataUpdated() {
-    setState(() {
-      dataForTomorrow = getAllVideoData();
-      dataForSeparateTomorrow = getAllVideoSeparateData();
-    });
+    fetchData();
+  }
+
+  Future<void> fetchData() async {
+    setState(() => isLoading = true);
+    final allData = await GoogleCloudFunctions.getAllVideoData();
+    if (!_isMounted) return;
+    final selectedCategories = myState.selectedCategories;
+    final videoList =
+        filterByOfficeIndices(allData, selectedCategories, "video");
+    final now = DateTime.now();
+    final tomorrow = now.add(const Duration(days: 1));
+
+    // 明日のデータ
+    tomorrowData = videoList.where((data) {
+      final comparisonDayJST = DateTime.parse(data['comparisonDay']).toLocal();
+      return comparisonDayJST.year == tomorrow.year &&
+          comparisonDayJST.month == tomorrow.month &&
+          comparisonDayJST.day == tomorrow.day;
+    }).toList();
+
+    // 時間ごと
+    tomorrowHourData = List.generate(24, (_) => []);
+    for (var data in tomorrowData) {
+      final hour = DateTime.parse(data['comparisonDay']).toLocal().hour;
+      tomorrowHourData[hour].add(data);
+    }
+    setState(() => isLoading = false);
   }
 
   Future<void> _refreshData() async {
-    // if (showTomorrowFirstView) {
-    //   showProgressDialog(context);
-    // }
-    await Future.delayed(const Duration(seconds: 2));
-    setState(() {
-      dataForTomorrow = getAllVideoData();
-      dataForSeparateTomorrow = getAllVideoSeparateData();
-    });
+    await fetchData();
   }
 
-  Future<List<dynamic>> getAllVideoData() async {
-    try {
-      final List<dynamic> fetchedCLives =
-          await GoogleCloudFunctions.getAllVideoData();
-      List<dynamic> dataForTomorrow = [];
-      if (_isMounted) {
-        final selectedCategories =
-            Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories;
-        final videoList =
-            filterByOfficeIndices(fetchedCLives, selectedCategories, "video");
-        final now = DateTime.now();
-        dataForTomorrow = videoList.where((data) {
-          final comparisonDayJST =
-              DateTime.parse(data['comparisonDay']).toLocal();
-          // 明日の日付と比較
-          final tomorrow = now.add(const Duration(days: 1));
-          return comparisonDayJST.year == tomorrow.year &&
-              comparisonDayJST.month == tomorrow.month &&
-              comparisonDayJST.day == tomorrow.day;
-        }).toList();
-      }
-      return dataForTomorrow;
-    } catch (e) {
-      print('Error fetching data: $e');
-      return [];
-    }
-  }
-
-  Future<List<List<dynamic>>> getAllVideoSeparateData() async {
-    try {
-      final List<dynamic> fetchedCLives =
-          await GoogleCloudFunctions.getAllVideoData();
-      List<List<dynamic>> dataForHour = List.generate(24, (_) => []);
-      if (_isMounted) {
-        final selectedCategories =
-            Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories;
-        final videoList =
-            filterByOfficeIndices(fetchedCLives, selectedCategories, "video");
-        final now = DateTime.now();
-        final tomorrow = now.add(const Duration(days: 1));
-        final tomorrowList = videoList.where((data) {
-          final comparisonDayJST =
-              DateTime.parse(data['comparisonDay']).toLocal();
-          return comparisonDayJST.year == tomorrow.year &&
-              comparisonDayJST.month == tomorrow.month &&
-              comparisonDayJST.day == tomorrow.day;
-        }).toList();
-        for (var data in tomorrowList) {
-          final hour = DateTime.parse(data['comparisonDay']).toLocal().hour;
-          dataForHour[hour].add(data);
-        }
-      }
-      return dataForHour;
-    } catch (e) {
-      print('Error fetching data: $e');
-      return List.generate(24, (_) => []);
-    }
+  Widget videoWidget(Map<String, dynamic> data, DateTime now, double height) {
+    return VideoWidget(
+      data: data,
+      now: now,
+      height: height,
+      videoUrl: '',
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     DateTime now = DateTime.now();
     int row = 1;
     if (MediaQuery.of(context).size.width > 1000) {
@@ -159,7 +125,14 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
     double height = calculateItemHeight(context);
     double screenWidth = MediaQuery.of(context).size.width;
 
-    if (!showTomorrowFirstView) {
+    if (isLoading) {
+      return const CuteLoadingWidget(
+        message: '配信予定を読み込み中…',
+        color: Colors.blueAccent,
+      );
+    }
+
+    if (!showFirstView) {
       // 通常リスト表示
       return SafeArea(
         top: true,
@@ -170,7 +143,7 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
               FloatingActionButton(
                 onPressed: () {
                   setState(() {
-                    showTomorrowFirstView = !showTomorrowFirstView;
+                    showFirstView = !showFirstView;
                   });
                 },
                 shape: RoundedRectangleBorder(
@@ -178,18 +151,16 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
                 ),
                 backgroundColor: Colors.indigo,
                 child: Icon(
-                  showTomorrowFirstView ? Icons.table_rows : Icons.schedule,
+                  showFirstView ? Icons.table_rows : Icons.schedule,
                   size: 42,
                   color: Colors.white,
                 ),
               ),
               const SizedBox(width: 8),
-              if (showTomorrowFirstView)
+              if (showFirstView)
                 FloatingActionButton(
                   onPressed: () {
-                    setState(() {
-                      _refreshData();
-                    });
+                    _refreshData();
                   },
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
@@ -206,68 +177,47 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
           floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
           body: RefreshIndicator(
             onRefresh: _refreshData,
-            child: FutureBuilder<List<dynamic>>(
-              future: dataForTomorrow,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const CuteLoadingWidget(
-                      message: '配信予定を読み込み中…', color: Colors.blueAccent);
-                } else if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
-                } else {
-                  List dataForTomorrow = snapshot.data!;
-                  if (dataForTomorrow.isEmpty) {
-                    return const Center(
-                      child: CuteEmptyWidget(
-                        message: '配信予定の動画はありません',
-                        icon: Icon(Icons.video_library,
-                            size: 56, color: Colors.blueAccent),
-                        color: Colors.blueAccent,
-                      ),
-                    );
-                  } else {
-                    if (row > 1) {
-                      return GridView.builder(
+            child: tomorrowData.isEmpty
+                ? const Center(
+                    child: CuteEmptyWidget(
+                      message: '配信予定の動画はありません',
+                      icon: Icon(Icons.video_library,
+                          size: 56, color: Colors.blueAccent),
+                      color: Colors.blueAccent,
+                    ),
+                  )
+                : (row > 1
+                    ? GridView.builder(
                         physics: const FasterScrollPhysics(),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: row,
                           crossAxisSpacing: 8.0,
                           mainAxisSpacing: 8.0,
                         ),
-                        itemCount: dataForTomorrow.length,
+                        itemCount: tomorrowData.length,
                         itemBuilder: (context, index) {
                           return SizedBox(
                               child: videoWidget(
-                                  dataForTomorrow[index], now, height));
+                                  tomorrowData[index], now, height));
                         },
-                      );
-                    } else {
-                      return ListView.builder(
-                        itemCount: dataForTomorrow.length,
+                      )
+                    : ListView.builder(
+                        itemCount: tomorrowData.length,
                         physics: const FasterScrollPhysics(),
                         itemBuilder: (context, index) {
                           return Column(children: [
                             SizedBox(
                                 child: videoWidget(
-                                    dataForTomorrow[index], now, height)),
-                            if (!kIsWeb)
-                              if (index % YoutubeNativeADInterval == 0)
-                                Align(
-                                  alignment: Alignment.topCenter,
-                                  child: SizedBox(
-                                    width: screenWidth,
-                                    height: height,
-                                    child: adHelper.buildNextNativeAdWidget(),
-                                  ),
-                                ),
+                                    tomorrowData[index], now, height)),
+                            if (!kIsWeb && index % YoutubeNativeADInterval == 0)
+                              Align(
+                                alignment: Alignment.topCenter,
+                                child: getNextNativeAdWidget(
+                                    width: screenWidth, height: height),
+                              ),
                           ]);
                         },
-                      );
-                    }
-                  }
-                }
-              },
-            ),
+                      )),
           ),
         ),
       );
@@ -301,110 +251,86 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
                   ),
                 ),
                 Expanded(
-                  child: FutureBuilder<List<List<dynamic>>>(
-                    future: dataForSeparateTomorrow,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const CuteLoadingWidget(
-                            message: '配信予定を読み込み中…', color: Colors.blueAccent);
-                      } else if (snapshot.hasError) {
-                        return Center(child: Text('Error: ${snapshot.error}'));
+                  child: TabBarView(
+                    physics:
+                        kIsWeb ? const NeverScrollableScrollPhysics() : null,
+                    children: List.generate(24, (hourIndex) {
+                      List<dynamic> dataForHour = tomorrowHourData[hourIndex];
+                      if (dataForHour.isEmpty) {
+                        return Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Center(
+                              child: CuteEmptyWidget(
+                                message: '配信予定の動画はありません',
+                                icon: Icon(Icons.video_library,
+                                    size: 56, color: Colors.blueAccent),
+                                color: Colors.blueAccent,
+                              ),
+                            ),
+                            if (!kIsWeb)
+                              Align(
+                                alignment: Alignment.topCenter,
+                                child: getNextNativeAdWidget(
+                                    width: screenWidth, height: height),
+                              ),
+                          ],
+                        );
                       } else {
-                        List<List<dynamic>> dataForHours = snapshot.data!;
-                        if (dataForHours.isEmpty) {
-                          dataForHours = List.generate(24, (_) => []);
-                        }
-                        return TabBarView(
-                          physics: kIsWeb
-                              ? const NeverScrollableScrollPhysics()
-                              : null,
-                          children: List.generate(24, (hourIndex) {
-                            List<dynamic> dataForHour = dataForHours[hourIndex];
-                            if (dataForHour.isEmpty) {
-                              return Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Center(
-                                    child: CuteEmptyWidget(
-                                      message: '配信予定の動画はありません',
-                                      icon: Icon(Icons.video_library,
-                                          size: 56, color: Colors.blueAccent),
-                                      color: Colors.blueAccent,
-                                    ),
-                                  ),
+                        if (row > 1) {
+                          return GridView.builder(
+                            physics: const FasterScrollPhysics(),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: row,
+                              crossAxisSpacing: 8.0,
+                              mainAxisSpacing: 8.0,
+                            ),
+                            itemCount: dataForHour.length,
+                            itemBuilder: (context, index) {
+                              return SizedBox(
+                                  child: videoWidget(
+                                      dataForHour[index], now, height));
+                            },
+                          );
+                        } else {
+                          return ListView.builder(
+                            itemCount: dataForHour.length,
+                            physics: const FasterScrollPhysics(),
+                            itemBuilder: (context, index) {
+                              return Column(children: [
+                                SizedBox(
+                                    child: videoWidget(
+                                        dataForHour[index], now, height)),
+                                if (!kIsWeb &&
+                                    index % YoutubeNativeADInterval == 0)
                                   Align(
                                     alignment: Alignment.topCenter,
-                                    child: SizedBox(
-                                      width: screenWidth,
-                                      height: height,
-                                      child: adHelper.buildNextNativeAdWidget(),
+                                    child: getNextNativeAdWidget(
+                                        width: 320, height: 320),
+                                  ),
+                                if (!kIsWeb && index == dataForHour.length - 1)
+                                  if (adHelper.bannerAds.isNotEmpty)
+                                    Align(
+                                      alignment: Alignment.topCenter,
+                                      child: SizedBox(
+                                        width: adHelper.bannerAds[0]!.size.width
+                                            .toDouble(),
+                                        height: adHelper
+                                            .bannerAds[0]!.size.height
+                                            .toDouble(),
+                                        child: adHelper
+                                            .buildBannerAdWidgetNextAd(),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              );
-                            } else {
-                              if (row > 1) {
-                                return GridView.builder(
-                                  physics: const FasterScrollPhysics(),
-                                  gridDelegate:
-                                      SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: row,
-                                    crossAxisSpacing: 8.0,
-                                    mainAxisSpacing: 8.0,
-                                  ),
-                                  itemCount: dataForHour.length,
-                                  itemBuilder: (context, index) {
-                                    return SizedBox(
-                                        child: videoWidget(
-                                            dataForHour[index], now, height));
-                                  },
-                                );
-                              } else {
-                                return ListView.builder(
-                                  itemCount: dataForHour.length,
-                                  physics: const FasterScrollPhysics(),
-                                  itemBuilder: (context, index) {
-                                    return Column(children: [
-                                      SizedBox(
-                                          child: videoWidget(
-                                              dataForHour[index], now, height)),
-                                      if (index % YoutubeNativeADInterval == 0)
-                                        Align(
-                                          alignment: Alignment.topCenter,
-                                          child: SizedBox(
-                                            width: 320,
-                                            height: 320,
-                                            child: adHelper
-                                                .buildNextNativeAdWidget(),
-                                          ),
-                                        ),
-                                      if (!kIsWeb)
-                                        if (index == dataForHour.length - 1)
-                                          if (adHelper.bannerAds.isNotEmpty)
-                                            Align(
-                                              alignment: Alignment.topCenter,
-                                              child: SizedBox(
-                                                width: adHelper
-                                                    .bannerAds[0]!.size.width
-                                                    .toDouble(),
-                                                height: adHelper
-                                                    .bannerAds[0]!.size.height
-                                                    .toDouble(),
-                                                child: adHelper
-                                                    .buildBannerAdWidgetNextAd(),
-                                              ),
-                                            ),
-                                      if (index == dataForHour.length - 1)
-                                        const SizedBox(height: 70)
-                                    ]);
-                                  },
-                                );
-                              }
-                            }
-                          }),
-                        );
+                                if (index == dataForHour.length - 1)
+                                  const SizedBox(height: 70)
+                              ]);
+                            },
+                          );
+                        }
                       }
-                    },
+                    }),
                   ),
                 ),
               ],
@@ -414,7 +340,7 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
                 FloatingActionButton(
                   onPressed: () {
                     setState(() {
-                      showTomorrowFirstView = !showTomorrowFirstView;
+                      showFirstView = !showFirstView;
                     });
                   },
                   shape: RoundedRectangleBorder(
@@ -422,18 +348,16 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
                   ),
                   backgroundColor: Colors.indigo,
                   child: Icon(
-                    showTomorrowFirstView ? Icons.table_rows : Icons.schedule,
+                    showFirstView ? Icons.table_rows : Icons.schedule,
                     size: 42,
                     color: Colors.white,
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (showTomorrowFirstView)
+                if (showFirstView)
                   FloatingActionButton(
                     onPressed: () {
-                      setState(() {
-                        _refreshData();
-                      });
+                      _refreshData();
                     },
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),

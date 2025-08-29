@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 import 'package:vtuberchannel/main.dart';
 import 'package:vtuberchannel/sideMenu.dart';
@@ -7,8 +8,6 @@ import '../googleCloudFunctions.dart';
 import 'videoDistribution.dart';
 import '../common.dart';
 import '../widgets/cute_loading_widget.dart';
-
-bool showTodayFirstView = true;
 
 class TodayLiveScheduleTab extends StatefulWidget
     implements PreferredSizeWidget {
@@ -19,30 +18,24 @@ class TodayLiveScheduleTab extends StatefulWidget
   _TodayLiveScheduleTabState createState() => _TodayLiveScheduleTabState();
 }
 
-class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
-  late Future<List<dynamic>> dataForToday;
-  late Future<List<dynamic>> dataForSeparateToday;
+class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab>
+    with AutomaticKeepAliveClientMixin {
+  List<dynamic> todayData = [];
+  List<List<dynamic>> todayHourData = List.generate(24, (_) => []);
+  bool isLoading = true;
   bool _isMounted = false;
   late SelectedCategorie myState;
   late FavoriteVideoData myFavorteState;
   late PushRegisterState myPushState;
-  ConstrainedBox adContainer =
-      ConstrainedBox(constraints: const BoxConstraints());
-  Widget videoWidget(Map<String, dynamic> data, DateTime now, double height) {
-    return VideoWidget(
-      data: data,
-      now: now,
-      height: height,
-      videoUrl: '',
-    );
-  }
+  bool showTodayFirstView = true; // グローバル→State内へ
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
     _isMounted = true;
-    dataForToday = getAllVideoData();
-    dataForSeparateToday = getAllVideoSeparateData();
     myState = Provider.of<SelectedCategorie>(context, listen: false);
     myState.addListener(_onDataUpdated);
     myFavorteState = Provider.of<FavoriteVideoData>(context, listen: false);
@@ -51,9 +44,17 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
     myPushState.addListener(_onDataUpdated);
 
     if (!kIsWeb) {
-      adHelper.buildNextNativeAdWidget();
       adHelper.loadBannerAds();
     }
+    fetchData();
+  }
+
+  // 毎回新しいNativeAdを生成して返す
+  Widget getNextNativeAdWidget({double? width, double? height}) {
+    return NativeAdContainer(
+      width: width ?? double.infinity,
+      height: height ?? 320,
+    );
   }
 
   @override
@@ -67,86 +68,51 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
   }
 
   void _onDataUpdated() {
-    // _isMounted = false;
-    setState(() {
-      dataForToday = getAllVideoData();
-      dataForSeparateToday = getAllVideoSeparateData();
-    });
+    fetchData();
+  }
+
+  Future<void> fetchData() async {
+    setState(() => isLoading = true);
+    final allData = await GoogleCloudFunctions.getAllVideoData();
+    if (!_isMounted) return;
+    final selectedCategories = myState.selectedCategories;
+    final videoList =
+        filterByOfficeIndices(allData, selectedCategories, "video");
+    final now = DateTime.now();
+
+    // 今日のデータ
+    todayData = videoList.where((data) {
+      final comparisonDayJST = DateTime.parse(data['comparisonDay']).toLocal();
+      return comparisonDayJST.year == now.year &&
+          comparisonDayJST.month == now.month &&
+          comparisonDayJST.day == now.day;
+    }).toList();
+
+    // 時間ごと
+    todayHourData = List.generate(24, (_) => []);
+    for (var data in todayData) {
+      final hour = DateTime.parse(data['comparisonDay']).toLocal().hour;
+      todayHourData[hour].add(data);
+    }
+    setState(() => isLoading = false);
   }
 
   Future<void> _refreshData() async {
-    // if (showTomorrowFirstView) {
-    //   showProgressDialog(context);
-    // }
-    await Future.delayed(const Duration(seconds: 2));
-    setState(() {
-      dataForToday = getAllVideoData();
-      dataForSeparateToday = getAllVideoSeparateData();
-    });
+    await fetchData();
   }
 
-  Future<List<dynamic>> getAllVideoData() async {
-    try {
-      final List<dynamic> fetchedCLives =
-          await GoogleCloudFunctions.getAllVideoData();
-      List<dynamic> dataForToday = [];
-      if (_isMounted) {
-        List<dynamic> videoList = filterByOfficeIndices(
-            fetchedCLives,
-            Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories,
-            "video");
-        List.generate(1, (hourIndex) {
-          dataForToday = videoList.where((data) {
-            DateTime comparisonDayUTC = DateTime.parse(data['comparisonDay']);
-            DateTime comparisonDayJST = comparisonDayUTC.toLocal();
-            DateTime now = DateTime.now();
-            return comparisonDayJST.year == now.year &&
-                comparisonDayJST.month == now.month &&
-                comparisonDayJST.day == now.day;
-          }).toList();
-        });
-      }
-      return dataForToday;
-    } catch (e) {
-      print('Error fetching data: $e');
-      return [];
-    }
-  }
-
-  Future<List<List<dynamic>>> getAllVideoSeparateData() async {
-    try {
-      final List<dynamic> fetchedCLives =
-          await GoogleCloudFunctions.getAllVideoData();
-      List<List<dynamic>> dataForHour = List.generate(24, (_) => []);
-      if (_isMounted) {
-        final selectedCategories =
-            Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories;
-        final videoList =
-            filterByOfficeIndices(fetchedCLives, selectedCategories, "video");
-        final now = DateTime.now();
-        final todayList = videoList.where((data) {
-          final comparisonDayJST =
-              DateTime.parse(data['comparisonDay']).toLocal();
-          return comparisonDayJST.year == now.year &&
-              comparisonDayJST.month == now.month &&
-              comparisonDayJST.day == now.day;
-        }).toList();
-        for (var data in todayList) {
-          final hour = DateTime.parse(data['comparisonDay']).toLocal().hour;
-          dataForHour[hour].add(data);
-        }
-      }
-      return dataForHour;
-    } catch (e) {
-      print('Error fetching data: $e');
-      return List.generate(24, (_) => []);
-    }
+  Widget videoWidget(Map<String, dynamic> data, DateTime now, double height) {
+    return VideoWidget(
+      data: data,
+      now: now,
+      height: height,
+      videoUrl: '',
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     DateTime now = DateTime.now();
     int row = 1;
     if (MediaQuery.of(context).size.width > 1000) {
@@ -156,6 +122,13 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
     }
     double height = calculateItemHeight(context);
     double screenWidth = MediaQuery.of(context).size.width;
+
+    if (isLoading) {
+      return const CuteLoadingWidget(
+        message: '配信予定を読み込み中…',
+        color: Colors.blueAccent,
+      );
+    }
 
     if (!showTodayFirstView) {
       // 通常リスト表示
@@ -185,9 +158,7 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
               if (showTodayFirstView)
                 FloatingActionButton(
                   onPressed: () {
-                    setState(() {
-                      _refreshData();
-                    });
+                    _refreshData();
                   },
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
@@ -204,72 +175,50 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
           floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
           body: RefreshIndicator(
             onRefresh: _refreshData,
-            child: FutureBuilder<List<dynamic>>(
-              future: dataForToday,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const CuteLoadingWidget(
-                      message: '配信予定を読み込み中…', color: Colors.blueAccent);
-                } else if (snapshot.hasError) {
-                  return Center(child: Text('Error: ￿${snapshot.error}'));
-                } else {
-                  List dataForToday = snapshot.data!;
-                  if (dataForToday.isEmpty) {
-                    return const Center(
-                      child: CuteEmptyWidget(
-                        message: '配信動画はありません',
-                        icon: Icon(Icons.video_library,
-                            size: 56, color: Colors.blueAccent),
-                        color: Colors.blueAccent,
-                      ),
-                    );
-                  } else {
-                    if (row > 1) {
-                      return GridView.builder(
+            child: todayData.isEmpty
+                ? const Center(
+                    child: CuteEmptyWidget(
+                      message: '配信動画はありません',
+                      icon: Icon(Icons.video_library,
+                          size: 56, color: Colors.blueAccent),
+                      color: Colors.blueAccent,
+                    ),
+                  )
+                : (row > 1
+                    ? GridView.builder(
                         physics: const FasterScrollPhysics(),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: row,
                           crossAxisSpacing: 8.0,
                           mainAxisSpacing: 8.0,
                         ),
-                        itemCount: dataForToday.length,
+                        itemCount: todayData.length,
                         itemBuilder: (context, index) {
                           return SizedBox(
-                              child: videoWidget(
-                                  dataForToday[index], now, height));
+                              child:
+                                  videoWidget(todayData[index], now, height));
                         },
-                      );
-                    } else {
-                      return ListView.builder(
-                        itemCount: dataForToday.length,
+                      )
+                    : ListView.builder(
+                        itemCount: todayData.length,
                         physics: const FasterScrollPhysics(),
                         itemBuilder: (context, index) {
                           return Column(children: [
                             SizedBox(
-                                child: videoWidget(
-                                    dataForToday[index], now, height)),
-                            if (!kIsWeb)
-                              if (index % YoutubeNativeADInterval == 0)
-                                Align(
-                                  alignment: Alignment.topCenter,
-                                  child: SizedBox(
-                                    width: screenWidth,
-                                    height: height,
-                                    child: adHelper.buildNextNativeAdWidget(),
-                                  ),
-                                ),
+                                child:
+                                    videoWidget(todayData[index], now, height)),
+                            if (!kIsWeb && index % YoutubeNativeADInterval == 0)
+                              Align(
+                                alignment: Alignment.topCenter,
+                                child: getNextNativeAdWidget(
+                                    width: screenWidth, height: height),
+                              ),
                           ]);
                         },
-                      );
-                    }
-                  }
-                }
-              },
-            ),
+                      )),
           ),
         ),
       );
-      // ...既存のコード...
     } else {
       // タブ＋時間別表示
       return SafeArea(
@@ -279,7 +228,6 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
           length: 24,
           initialIndex: DateTime.now().hour,
           child: Scaffold(
-            // AppBarを使わず、TabBarを直接配置
             body: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -301,110 +249,86 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
                   ),
                 ),
                 Expanded(
-                  child: FutureBuilder<List<dynamic>>(
-                    future: dataForSeparateToday,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const CuteLoadingWidget(
-                            message: '配信予定を読み込み中…', color: Colors.blueAccent);
-                      } else if (snapshot.hasError) {
-                        return Center(child: Text('Error: ${snapshot.error}'));
+                  child: TabBarView(
+                    physics:
+                        kIsWeb ? const NeverScrollableScrollPhysics() : null,
+                    children: List.generate(24, (hourIndex) {
+                      List<dynamic> dataForHour = todayHourData[hourIndex];
+                      if (dataForHour.isEmpty) {
+                        return Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Center(
+                              child: CuteEmptyWidget(
+                                message: '配信動画はありません',
+                                icon: Icon(Icons.video_library,
+                                    size: 56, color: Colors.blueAccent),
+                                color: Colors.blueAccent,
+                              ),
+                            ),
+                            Align(
+                              alignment: Alignment.topCenter,
+                              child: getNextNativeAdWidget(
+                                  width: screenWidth, height: height),
+                            ),
+                          ],
+                        );
                       } else {
-                        List dataForHours = snapshot.data!;
-                        if (dataForHours.isEmpty) {
-                          dataForHours = List.generate(24, (_) => []);
-                        }
-                        return TabBarView(
-                          physics: kIsWeb
-                              ? const NeverScrollableScrollPhysics()
-                              : null,
-                          children: List.generate(24, (hourIndex) {
-                            List<dynamic> dataForHour = dataForHours[hourIndex];
-                            if (dataForHour.isEmpty) {
-                              return Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Center(
-                                    child: CuteEmptyWidget(
-                                      message: '配信動画はありません',
-                                      icon: Icon(Icons.video_library,
-                                          size: 56, color: Colors.blueAccent),
-                                      color: Colors.blueAccent,
-                                    ),
-                                  ),
+                        if (row > 1) {
+                          return GridView.builder(
+                            physics: const FasterScrollPhysics(),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: row,
+                              crossAxisSpacing: 8.0,
+                              mainAxisSpacing: 8.0,
+                            ),
+                            itemCount: dataForHour.length,
+                            itemBuilder: (context, index) {
+                              return SizedBox(
+                                  child: videoWidget(
+                                      dataForHour[index], now, height));
+                            },
+                          );
+                        } else {
+                          return ListView.builder(
+                            itemCount: dataForHour.length,
+                            physics: const FasterScrollPhysics(),
+                            itemBuilder: (context, index) {
+                              return Column(children: [
+                                SizedBox(
+                                    child: videoWidget(
+                                        dataForHour[index], now, height)),
+                                if (index % YoutubeNativeADInterval == 0)
                                   Align(
                                     alignment: Alignment.topCenter,
-                                    child: SizedBox(
-                                      width: screenWidth,
-                                      height: height,
-                                      child: adHelper.buildNextNativeAdWidget(),
-                                    ),
+                                    child: getNextNativeAdWidget(
+                                        width: 320, height: 320),
                                   ),
-                                ],
-                              );
-                            } else {
-                              if (row > 1) {
-                                return GridView.builder(
-                                  physics: const FasterScrollPhysics(),
-                                  gridDelegate:
-                                      SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: row,
-                                    crossAxisSpacing: 8.0,
-                                    mainAxisSpacing: 8.0,
-                                  ),
-                                  itemCount: dataForHour.length,
-                                  itemBuilder: (context, index) {
-                                    return SizedBox(
-                                        child: videoWidget(
-                                            dataForHour[index], now, height));
-                                  },
-                                );
-                              } else {
-                                return ListView.builder(
-                                  itemCount: dataForHour.length,
-                                  physics: const FasterScrollPhysics(),
-                                  itemBuilder: (context, index) {
-                                    return Column(children: [
-                                      SizedBox(
-                                          child: videoWidget(
-                                              dataForHour[index], now, height)),
-                                      if (index % YoutubeNativeADInterval == 0)
-                                        Align(
-                                          alignment: Alignment.topCenter,
-                                          child: SizedBox(
-                                            width: 320,
-                                            height: 320,
-                                            child: adHelper
-                                                .buildNextNativeAdWidget(),
-                                          ),
+                                if (!kIsWeb)
+                                  if (index == dataForHour.length - 1)
+                                    if (adHelper.bannerAds.isNotEmpty)
+                                      Align(
+                                        alignment: Alignment.topCenter,
+                                        child: SizedBox(
+                                          width: adHelper
+                                              .bannerAds[0]!.size.width
+                                              .toDouble(),
+                                          height: adHelper
+                                              .bannerAds[0]!.size.height
+                                              .toDouble(),
+                                          child: adHelper
+                                              .buildBannerAdWidgetNextAd(),
                                         ),
-                                      if (!kIsWeb)
-                                        if (index == dataForHour.length - 1)
-                                          if (adHelper.bannerAds.isNotEmpty)
-                                            Align(
-                                              alignment: Alignment.topCenter,
-                                              child: SizedBox(
-                                                width: adHelper
-                                                    .bannerAds[0]!.size.width
-                                                    .toDouble(),
-                                                height: adHelper
-                                                    .bannerAds[0]!.size.height
-                                                    .toDouble(),
-                                                child: adHelper
-                                                    .buildBannerAdWidgetNextAd(),
-                                              ),
-                                            ),
-                                      if (index == dataForHour.length - 1)
-                                        const SizedBox(height: 70)
-                                    ]);
-                                  },
-                                );
-                              }
-                            }
-                          }),
-                        );
+                                      ),
+                                if (index == dataForHour.length - 1)
+                                  const SizedBox(height: 70)
+                              ]);
+                            },
+                          );
+                        }
                       }
-                    },
+                    }),
                   ),
                 ),
               ],
@@ -431,9 +355,7 @@ class _TodayLiveScheduleTabState extends State<TodayLiveScheduleTab> {
                 if (showTodayFirstView)
                   FloatingActionButton(
                     onPressed: () {
-                      setState(() {
-                        _refreshData();
-                      });
+                      _refreshData();
                     },
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),

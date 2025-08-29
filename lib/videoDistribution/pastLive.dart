@@ -15,11 +15,14 @@ class PastLive extends StatefulWidget {
 
 class _PastLive extends State<PastLive>
     with AutomaticKeepAliveClientMixin, RouteAware {
-  Set<String> selectedCategories = {}; // 選択されたカテゴリを保持する変数
+  Set<String> selectedCategories = {};
   late SelectedCategorie myState;
   late FavoriteVideoData myFavorteState;
   bool _isMounted = false;
   late Future<List<dynamic>> _videoList;
+
+  // ネイティブ広告ウィジェットキャッシュは廃止
+
   Widget videoWidget(Map<String, dynamic> data, DateTime now, double height) {
     return VideoWidget(
       data: data,
@@ -29,7 +32,6 @@ class _PastLive extends State<PastLive>
     );
   }
 
-  // KeepAlive関連のコードを追加
   @override
   bool get wantKeepAlive => true;
 
@@ -37,29 +39,27 @@ class _PastLive extends State<PastLive>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // ここに画面が構築された後に実行したい処理を記述します
       debugPrint("WidgetsBinding");
     });
     myState = Provider.of<SelectedCategorie>(context, listen: false);
-    myState.addListener(_onDataUpdated); // リスナーを登録
+    myState.addListener(_onDataUpdated);
     myFavorteState = Provider.of<FavoriteVideoData>(context, listen: false);
-    myFavorteState.addListener(_onDataUpdated); // リスナーを登録
+    myFavorteState.addListener(_onDataUpdated);
     _isMounted = true;
 
-    if (kIsWeb) {
-    } else {
-      // Admob
-      adHelper.buildNextNativeAdWidget();
+    if (!kIsWeb) {
+      adHelper.loadBannerAds();
     }
     _videoList = _loadData();
   }
 
+  // _initNativeAds, getNextNativeAd は不要になったので削除
+
   @override
   void dispose() {
     _isMounted = false;
-    myState.removeListener(_onDataUpdated); // リスナーを解除
-    myFavorteState.removeListener(_onDataUpdated); // リスナーを解除
-    // Admob
+    myState.removeListener(_onDataUpdated);
+    myFavorteState.removeListener(_onDataUpdated);
     adHelper.disposeNativeAds();
     super.dispose();
   }
@@ -72,8 +72,6 @@ class _PastLive extends State<PastLive>
 
   @override
   void didChangeDependencies() {
-    // 遷移時に呼ばれる関数
-    // routeObserverに自身を設定
     super.didChangeDependencies();
     debugPrint("didChangeDependencies");
   }
@@ -94,7 +92,6 @@ class _PastLive extends State<PastLive>
           DateTime comparisonDayUTC = DateTime.parse(data['comparisonDay']);
           DateTime comparisonDayJST = comparisonDayUTC.toLocal();
           DateTime now = DateTime.now();
-          // 昨日以前のデータを取得
           return comparisonDayJST
               .isBefore(DateTime(now.year, now.month, now.day));
         }).toList();
@@ -117,7 +114,7 @@ class _PastLive extends State<PastLive>
   void didUpdateWidget(oldWidget) {
     print("call didUpdateWidget");
     super.didUpdateWidget(oldWidget);
-    _refreshData;
+    _refreshData();
   }
 
   @override
@@ -129,14 +126,13 @@ class _PastLive extends State<PastLive>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    // 今日の日付
     DateTime now = DateTime.now();
 
-    // double height = calculateItemHeight(context);
     double screenWidth = MediaQuery.of(context).size.width;
-    if (MediaQuery.of(context).size.width > 1000) {
+    int row = 1;
+    if (screenWidth > 1000) {
       row = 3;
-    } else if (MediaQuery.of(context).size.width > 600) {
+    } else if (screenWidth > 600) {
       row = 2;
     }
     double height = calculateItemHeight(context);
@@ -150,7 +146,7 @@ class _PastLive extends State<PastLive>
               return const CuteLoadingWidget(
                   message: 'アーカイブを読み込み中…', color: Colors.blueAccent);
             } else if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
+              return Center(child: Text('Error: ���${snapshot.error}'));
             } else {
               List<dynamic> data = snapshot.data!;
               if (data.isEmpty) {
@@ -168,14 +164,12 @@ class _PastLive extends State<PastLive>
                     return GridView.builder(
                       physics: const FasterScrollPhysics(),
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: row, // 列数を設定
-                        crossAxisSpacing: 8.0, // 列間のスペース
-                        mainAxisSpacing: 8.0, // 行間のスペース
-                        //childAspectRatio: 3 / 4, // 要素のアスペクト比
+                        crossAxisCount: row,
+                        crossAxisSpacing: 8.0,
+                        mainAxisSpacing: 8.0,
                       ),
                       itemCount: data.length,
                       itemBuilder: (context, index) {
-                        // Web用のレイアウトを構築する
                         return SizedBox(
                             child: videoWidget(data[index], now, height));
                       },
@@ -188,22 +182,19 @@ class _PastLive extends State<PastLive>
                         return Column(children: [
                           SizedBox(
                               child: videoWidget(data[index], now, height)),
-                          if (!kIsWeb)
-                            if (index % YoutubeNativeADInterval == 0)
-                              Align(
-                                alignment: Alignment.topCenter,
-                                child: SizedBox(
-                                  width: screenWidth,
-                                  height: height,
-                                  child: adHelper
-                                      .buildNextNativeAdWidget(), //AdHelper().buildNativeAdWidget(),
-                                ),
+                          if (!kIsWeb && index % YoutubeNativeADInterval == 0)
+                            Align(
+                              alignment: Alignment.topCenter,
+                              child: SizedBox(
+                                width: screenWidth,
+                                height: height,
+                                child: adHelper.buildNextNativeAdWidget(),
                               ),
+                            )
                         ]);
                       },
                     );
                   }
-                  // ignore: unused_catch_stack
                 } catch (e, stackTrace) {
                   return const Center(
                     child: CuteEmptyWidget(
