@@ -63,8 +63,7 @@ class _ThreadListPageState extends State<ThreadListPage>
         await FirebaseFirestore.instance.collection('threads').get();
     final selectedCategorieProvider =
         Provider.of<SelectedCategorie>(context, listen: false);
-    final List<String> categoriesOrder =
-        selectedCategorieProvider.categoriesOrder;
+    final List<String> categoriesOrder = selectedCategorieProvider.officeOrder;
     for (var office in categoriesOrder) {
       officeThreadsMap[office] = [];
       initializedOffices.remove(office);
@@ -79,16 +78,14 @@ class _ThreadListPageState extends State<ThreadListPage>
         officeThreadsMap[officeName]!.add(threadId);
       }
     }
-    final selectedOfficeData =
-        selectedCategorieProvider.selectedCategories.toList();
     for (var office in categoriesOrder) {
       initializedOffices.add(office);
     }
     setState(() {
-      if (selectedOfficeData.isNotEmpty) {
+      if (categoriesOrder.isNotEmpty) {
         _tabController?.dispose();
         _tabController = TabController(
-          length: selectedOfficeData.length + 1, // +1 for rules tab
+          length: categoriesOrder.length + 1, // +1 for rules tab
           vsync: this,
         )..addListener(() {
             _updateSelectedThreads(_tabController!.index);
@@ -101,8 +98,10 @@ class _ThreadListPageState extends State<ThreadListPage>
   void _updateSelectedThreads(int tabIndex) {
     final selectedCategorieProvider =
         Provider.of<SelectedCategorie>(context, listen: false);
-    final List<String> categoriesOrder =
-        selectedCategorieProvider.categoriesOrder;
+    final List<String> filteredOfficeList =
+        selectedCategorieProvider.selectedOfficeList.isEmpty
+            ? selectedCategorieProvider.officeOrder
+            : selectedCategorieProvider.selectedOfficeList;
     // 0番目はルールタブ
     if (tabIndex == 0) {
       setState(() {
@@ -110,7 +109,7 @@ class _ThreadListPageState extends State<ThreadListPage>
       });
       return;
     }
-    final office = categoriesOrder[tabIndex - 1];
+    final office = filteredOfficeList[tabIndex - 1];
     setState(() {
       selectedThreadId = officeThreadsMap[office]?.isNotEmpty == true
           ? officeThreadsMap[office]!.first
@@ -139,21 +138,16 @@ class _ThreadListPageState extends State<ThreadListPage>
   Widget build(BuildContext context) {
     final selectedCategorieProvider =
         Provider.of<SelectedCategorie>(context, listen: true);
-    final List<String> selectedOfficeData =
-        selectedCategorieProvider.selectedCategories.toList();
-    final List<String> categoriesOrder =
-        selectedCategorieProvider.categoriesOrder;
+
+    // サイドメニューで何も選択されていなければ全オフィス、選択されていればそのオフィスのみ
+    final List<String> selectedOfficeList =
+        selectedCategorieProvider.selectedOfficeList;
+    final List<String> categoriesOrder = selectedCategorieProvider.officeOrder;
     final Map<String, String> officeIcons =
         selectedCategorieProvider.officeIcons;
 
-    if (selectedOfficeData.isEmpty) {
-      filteredOfficeList =
-          categoriesOrder.isNotEmpty ? categoriesOrder : officeList;
-    } else {
-      filteredOfficeList = categoriesOrder
-          .where((cat) => selectedOfficeData.contains(cat))
-          .toList();
-    }
+    filteredOfficeList =
+        selectedOfficeList.isEmpty ? categoriesOrder : selectedOfficeList;
 
     if (categoriesOrder.isEmpty) {
       return const Scaffold(

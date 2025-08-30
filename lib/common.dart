@@ -663,12 +663,10 @@ Future<void> initializeCategoriesOrder(context) async {
       return aOrder.compareTo(bOrder);
     });
   }
-  // Providerにセット
-  Provider.of<SelectedCategorie>(context, listen: false)
-      .setCategoriesOrder(fetchedCategories);
 
-  // アイコンもセットしたい場合
+  // アイコンとVtuberリストを生成
   Map<String, String> icons = {};
+  Map<String, List<String>> channelIdsByOffice = {};
   fetchedCategoriesMap.forEach((officeName, vtuberList) {
     final vtuberWithIcon = vtuberList.firstWhere(
       (vtuber) => vtuber['officeFlg'] == true,
@@ -679,8 +677,20 @@ Future<void> initializeCategoriesOrder(context) async {
     } else {
       icons[officeName] = "";
     }
+    // Vtuber IDリスト
+    channelIdsByOffice[officeName] = vtuberList
+        .where((v) => v['channeID'] != null)
+        .map<String>((v) => v['channeID'].toString())
+        .toList();
   });
-  Provider.of<SelectedCategorie>(context, listen: false).setOfficeIcons(icons);
+
+  // Providerにセット
+  Provider.of<SelectedCategorie>(context, listen: false).setOfficeDataFull(
+    officeOrder: fetchedCategories,
+    officeIcons: icons,
+    channelIdsByOffice: channelIdsByOffice,
+    vtuberListByOffice: {}, // 空でOK
+  );
 }
 
 // ===============================

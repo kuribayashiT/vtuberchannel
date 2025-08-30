@@ -72,13 +72,17 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab>
     fetchData();
   }
 
+  // ★ここを修正★
   Future<void> fetchData() async {
     setState(() => isLoading = true);
     final allData = await GoogleCloudFunctions.getAllVideoData();
     if (!_isMounted) return;
-    final selectedCategories = myState.selectedCategories;
-    final videoList =
-        filterByOfficeIndices(allData, selectedCategories, "video");
+    // Providerから選択中のchannelId一覧を取得
+    final selectedChannelIds = myState.allSelectedchannelIds;
+    // channelIdでフィルタ
+    final videoList = allData
+        .where((data) => selectedChannelIds.contains(data['channelId']))
+        .toList();
     final now = DateTime.now();
     final tomorrow = now.add(const Duration(days: 1));
 

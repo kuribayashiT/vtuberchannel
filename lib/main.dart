@@ -257,9 +257,7 @@ class MyHomePageState extends State<MyHomePage>
     SharedPreferences prefs = await SharedPreferences.getInstance();
     Set<String> _selectedCategories = {};
     _selectedCategories.addAll(prefs.getStringList('selectedCategories') ?? []);
-    // ignore: use_build_context_synchronously
-    Provider.of<SelectedCategorie>(context, listen: false)
-        .updateSelectedCategories(_selectedCategories);
+    // ↑この_setSelectedCategoriesはもう使わないので、上2行も不要なら消してOK
     oldOshiraseJson = prefs.getString('oldOshiraseJson');
     fetchRemoteConfig();
   }

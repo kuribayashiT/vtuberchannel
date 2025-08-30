@@ -33,7 +33,6 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
   bool _isMounted = false;
   List<Map<String, dynamic>>? tabs;
 
-  // ignore: unused_field
   late TabController _tabController;
   late Future<void> officeDataFuture;
 
@@ -47,7 +46,7 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
     officeDataFuture = getOfficeData();
 
     myFavorteState = Provider.of<FavoriteVideoData>(context, listen: false);
-    myFavorteState.addListener(_onDataUpdated); // リスナーを登録
+    myFavorteState.addListener(_onDataUpdated);
     _isMounted = true;
   }
 
@@ -55,8 +54,8 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
   void dispose() {
     _isMounted = false;
     _scrollController.dispose();
-    myState.removeListener(_onDataUpdated); // リスナーを解除
-    myFavorteState.removeListener(_onDataUpdated); // リスナーを解除
+    myState.removeListener(_onDataUpdated);
+    myFavorteState.removeListener(_onDataUpdated);
     super.dispose();
   }
 
@@ -66,43 +65,38 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
 
   Future<void> getOfficeData() async {
     try {
-      final Map<String, dynamic> fetchedCategoriesMap =
+      final Map<String, dynamic> fetchedMap =
           await GoogleCloudFunctions.getOfficeData();
-      final List<String> fetchedCategories = fetchedCategoriesMap.keys.toList();
-      final Map<String, dynamic> _vtuberDataList = fetchedCategoriesMap;
-
+      // Providerから選択中のchannelId一覧を取得
+      final selectedChannelIds =
+          Provider.of<SelectedCategorie>(context, listen: false)
+              .allSelectedchannelIds;
+      // 全Vtuberをフラットなリストに変換
+      List<Map<String, dynamic>> allVtubers = [];
+      fetchedMap.forEach((office, vtuberList) {
+        if (vtuberList is List) {
+          for (var v in vtuberList) {
+            if (v is Map<String, dynamic>) {
+              allVtubers.add(v);
+            }
+          }
+        }
+      });
+      // 選択中のchannelIdだけに絞る
+      List<Map<String, dynamic>> filtered = allVtubers
+          .where((v) => selectedChannelIds.contains(v["channeID"]))
+          .toList();
       if (_isMounted) {
         setState(() {
-          officeData = fetchedCategories;
-          tabData = fetchedCategoriesMap;
-          vtuberDataList = _vtuberDataList;
-          List<dynamic>? rawList = filterByOfficeVtuber(
-              vtuberDataList,
-              Provider.of<SelectedCategorie>(context, listen: false)
-                  .selectedCategories,
-              officeData,
-              fetchedCategories);
-
-          // rawListがnullでないことを確認し、List<Map<String, dynamic>>?に変換する
-          List<Map<String, dynamic>>? convertedList;
-          // 各要素がMap<String, dynamic>であることを確認し、キャストする
-          if (rawList.every((element) => element is Map<String, dynamic>)) {
-            convertedList = rawList.cast<Map<String, dynamic>>();
-          } else {
-            // リスト内の要素の型がMap<String, dynamic>でない場合はエラー処理を行うなどします
-          }
-          tabs = convertedList;
+          tabs = filtered;
           _tabController = TabController(length: tabs!.length, vsync: this);
           _tabController.addListener(_handleTabChange);
         });
       }
     } catch (e) {
       print('Error fetching data: $e');
-      // エラーが発生した場合も `_isMounted` を確認してから `setState` を呼ぶ
       if (_isMounted) {
-        setState(() {
-          // エラーの処理を行う（例: エラーメッセージを表示する）
-        });
+        setState(() {});
       }
     }
   }

@@ -12,7 +12,6 @@ class LivePage extends StatefulWidget {
   const LivePage({super.key});
 
   @override
-  // ignore: library_private_types_in_public_api
   _LivePage createState() => _LivePage();
 }
 
@@ -41,7 +40,6 @@ class _LivePage extends State<LivePage> {
     _isMounted = false;
     myCateState.removeListener(_onDataUpdated); // リスナーを解除
     myFavorteState.removeListener(_onDataUpdated); // リスナーを解除
-
     super.dispose();
   }
 
@@ -50,11 +48,14 @@ class _LivePage extends State<LivePage> {
     _refreshData();
   }
 
+  // ★ここを修正★
   Future<List<dynamic>> getLiveData() async {
     try {
-      final selectedCategories =
+      // Providerから選択中のchannelId一覧を取得
+      final selectedChannelIds =
           Provider.of<SelectedCategorie>(context, listen: false)
-              .selectedCategories;
+              .allSelectedchannelIds;
+
       // 2つのAPIを並列取得
       final results = await Future.wait([
         GoogleCloudFunctions.getLiveData(),
@@ -63,31 +64,33 @@ class _LivePage extends State<LivePage> {
       final List<dynamic> fetchedCLives = results[0];
       final List<dynamic> allVideos = results[1];
 
-      List<Map<String, dynamic>> liveList =
-          filterByOfficeIndices(fetchedCLives, selectedCategories, "video")
-              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
-              .toList();
+      // 選択されたchannelIdのみでフィルタ
+      List<Map<String, dynamic>> liveList = fetchedCLives
+          .where((e) => selectedChannelIds.contains(e['channelId']))
+          .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+          .toList();
 
       final now = DateTime.now();
       final fiveMinBefore = now.subtract(const Duration(minutes: 5));
       final fiveMinAfter = now.add(const Duration(minutes: 5));
 
-      final List<Map<String, dynamic>> extraLives =
-          filterByOfficeIndices(allVideos, selectedCategories, "video")
-              .where((data) {
-                final comparisonDayJST =
-                    DateTime.parse(data['comparisonDay']).toLocal();
-                // 前後5分以内
-                return comparisonDayJST.isAfter(fiveMinBefore) &&
-                    comparisonDayJST.isBefore(fiveMinAfter);
+      // allVideosも同様にchannelIdでフィルタ
+      final List<Map<String, dynamic>> extraLives = allVideos
+          .where((data) => selectedChannelIds.contains(data['channelId']))
+          .where((data) {
+            final comparisonDayJST =
+                DateTime.parse(data['comparisonDay']).toLocal();
+            // 前後5分以内
+            return comparisonDayJST.isAfter(fiveMinBefore) &&
+                comparisonDayJST.isBefore(fiveMinAfter);
+          })
+          .map<Map<String, dynamic>>((data) => {
+                ...Map<String, dynamic>.from(data),
+                'concurrent_viewers': '接続数取得中…'
               })
-              .map<Map<String, dynamic>>((data) => {
-                    ...Map<String, dynamic>.from(data),
-                    'concurrent_viewers': '接続数取得中…'
-                  })
-              .where((data) =>
-                  !liveList.any((d) => d['videoID'] == data['videoID'])) // 重複除外
-              .toList();
+          .where((data) =>
+              !liveList.any((d) => d['videoID'] == data['videoID'])) // 重複除外
+          .toList();
 
       liveList.addAll(extraLives);
 
@@ -283,7 +286,6 @@ class _LivePage extends State<LivePage> {
                                   const Icon(Icons.online_prediction),
                                   const SizedBox(width: 4.0),
                                   Text(
-                                    // ignore: prefer_interpolation_to_compose_strings
                                     "同時接続数:" + data["concurrent_viewers"],
                                     style: const TextStyle(fontSize: 14.0),
                                     maxLines: 1,
@@ -328,7 +330,6 @@ class _LivePage extends State<LivePage> {
                                         .saveFavoriteVideo(data);
                                     showMessage(openContext, "お気に入り動画に登録しました。");
                                   }
-                                  // ボタンの表示を更新するためにsetStateを呼び出す
                                   setState(() {});
                                 },
                               );
@@ -363,11 +364,8 @@ class _LivePage extends State<LivePage> {
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           SizedBox(
-            // ContainerでAspectRatioをラップ
-            width: (MediaQuery.of(context).size.width - 16) / row, // 画面幅に合わせて設定
-            height: ((MediaQuery.of(context).size.width - 16) / row) *
-                9 /
-                16, // 16:9のアスペクト比を保つ
+            width: (MediaQuery.of(context).size.width - 16) / row,
+            height: ((MediaQuery.of(context).size.width - 16) / row) * 9 / 16,
             child: AspectRatio(
               aspectRatio: 16 / 9,
               child: CachedNetworkImage(
@@ -426,7 +424,6 @@ class _LivePage extends State<LivePage> {
                                   const Icon(Icons.online_prediction),
                                   const SizedBox(width: 4.0),
                                   Text(
-                                    // ignore: prefer_interpolation_to_compose_strings
                                     "同時接続数:" + data["concurrent_viewers"],
                                     style: const TextStyle(fontSize: 14.0),
                                     maxLines: 1,
@@ -471,7 +468,6 @@ class _LivePage extends State<LivePage> {
                                         .saveFavoriteVideo(data);
                                     showMessage(openContext, "お気に入り動画に登録しました。");
                                   }
-                                  // ボタンの表示を更新するためにsetStateを呼び出す
                                   setState(() {});
                                 },
                               );

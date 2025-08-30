@@ -91,6 +91,7 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
     });
   }
 
+  // ★ここを修正★
   Future<List<dynamic>> _loadData() async {
     try {
       final List<dynamic> fetchedCLives =
@@ -98,14 +99,20 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
       await Future.delayed(const Duration(seconds: 2));
       List<dynamic> videoList = [];
       if (_isMounted) {
-        List<dynamic> _videoList = filterByOfficeIndices(
-            fetchedCLives,
+        // Providerから選択中のchannelId一覧を取得
+        final selectedChannelIds =
             Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories,
-            "video");
+                .allSelectedchannelIds;
+
+        // channelIdでフィルタ
+        List<dynamic> _videoList = fetchedCLives
+            .where((data) => selectedChannelIds.contains(data['channelId']))
+            .toList();
+
         DateTime now = DateTime.now();
         DateTime twoDaysLater = DateTime(now.year, now.month, now.day + 2);
         DateTime twoWeeksLater = DateTime(now.year, now.month, now.day + 14);
+
         List<dynamic> dataFuture = _videoList.where((data) {
           DateTime comparisonDayUTC = DateTime.parse(data['comparisonDay']);
           DateTime comparisonDayJST = comparisonDayUTC.toLocal();

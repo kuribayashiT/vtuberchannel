@@ -21,7 +21,7 @@ class _eventCalendarState extends State<eventCalendar> {
   @override
   void initState() {
     super.initState();
-    
+
     getEventData();
   }
 
@@ -30,22 +30,21 @@ class _eventCalendarState extends State<eventCalendar> {
       // Google Cloud Functionsを呼び出してデータを取得
       final List<dynamic> fetchedEvents =
           await GoogleCloudFunctions.getEventData();
-    // EventFilter クラスを使用
+      // EventFilter クラスを使用
 
       setState(() {
-        final List<String> officeData = Provider.of<SelectedCategorie>(context, listen: false)
-        .selectedCategories
-        .toList();
+        final List<String> officeData =
+            Provider.of<SelectedCategorie>(context, listen: false).officeOrder;
         String formattedDate = DateFormat('M/d').format(selectedDay);
-        if(officeData.isEmpty){
+        if (officeData.isEmpty) {
           events = _parseEvents(fetchedEvents);
           selectedEvents = events[formattedDate] ?? [];
-        }else{
-          Map<String, List<dynamic>> filteredEvents = filterEventsByOffice(
-                fetchedEvents,
-                officeData);
-          //データの変換      
-          List<Map<String, List<dynamic>>> resultList = convertMapToList(filteredEvents);
+        } else {
+          Map<String, List<dynamic>> filteredEvents =
+              filterEventsByOffice(fetchedEvents, officeData);
+          //データの変換
+          List<Map<String, List<dynamic>>> resultList =
+              convertMapToList(filteredEvents);
           events = _parseEvents(resultList);
           selectedEvents = events[formattedDate] ?? [];
         }
@@ -54,7 +53,9 @@ class _eventCalendarState extends State<eventCalendar> {
       print('Error fetching data: $e');
     }
   }
-  List<Map<String, List<dynamic>>> convertMapToList(Map<String, List<dynamic>> mapData) {
+
+  List<Map<String, List<dynamic>>> convertMapToList(
+      Map<String, List<dynamic>> mapData) {
     List<Map<String, List<dynamic>>> resultList = [];
 
     // Map の各エントリを個別の Map にしてリストに追加
@@ -64,6 +65,7 @@ class _eventCalendarState extends State<eventCalendar> {
 
     return resultList;
   }
+
   Map<String, List<dynamic>> _parseEvents(List<dynamic> rawData) {
     final Map<String, List<dynamic>> parsedEvents = {};
 
@@ -144,7 +146,7 @@ class _eventCalendarState extends State<eventCalendar> {
               markerBuilder: (context, day, eventList) {
                 if (eventList.isNotEmpty) {
                   // if(eventList[]["eventType"]=="birthday"){
-                    
+
                   // }
                   return Positioned(
                     bottom: 1,
@@ -192,15 +194,17 @@ class _eventCalendarState extends State<eventCalendar> {
               itemCount: selectedEvents.length,
               itemBuilder: (context, index) {
                 String anniversaryText = '不明';
-                if (selectedEvents[index]['eventType'] == "createAt"){
+                if (selectedEvents[index]['eventType'] == "createAt") {
                   String fixDateFormat(String date) {
                     final parts = date.replaceAll('/', '-').split('-');
                     final year = parts[0];
                     final month = parts[1].padLeft(2, '0'); // 月をゼロ埋め
-                    final day = parts[2].padLeft(2, '0');   // 日をゼロ埋め
+                    final day = parts[2].padLeft(2, '0'); // 日をゼロ埋め
                     return '$year-$month-$day';
                   }
-                  final createdAtRaw = selectedEvents[index]['createdAt']; // "2020-12-5" など
+
+                  final createdAtRaw =
+                      selectedEvents[index]['createdAt']; // "2020-12-5" など
                   final fixedDate = fixDateFormat(createdAtRaw);
                   final createdAtDate = DateTime.parse(fixedDate);
                   final currentYear = DateTime.now().year;
@@ -212,21 +216,22 @@ class _eventCalendarState extends State<eventCalendar> {
                   } else {
                     anniversaryText = '未来のイベント';
                   }
-                }else if(selectedEvents[index]['eventType'] == "birthday") {
-                    anniversaryText = '誕生日';
+                } else if (selectedEvents[index]['eventType'] == "birthday") {
+                  anniversaryText = '誕生日';
                 }
                 return ListTile(
                   contentPadding:
-                    const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                    leading: SizedBox(
-                      width: 50,
-                      height: 50,
-                      child: CircleAvatar(
-                        backgroundImage: NetworkImage(
-                          selectedEvents[index]['channelThumbnail'] ?? 'https://via.placeholder.com/50',
-                        ),
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  leading: SizedBox(
+                    width: 50,
+                    height: 50,
+                    child: CircleAvatar(
+                      backgroundImage: NetworkImage(
+                        selectedEvents[index]['channelThumbnail'] ??
+                            'https://via.placeholder.com/50',
                       ),
                     ),
+                  ),
                   title: Text(
                     selectedEvents[index]['name'] ?? 'タイトルなし',
                     maxLines: 1,

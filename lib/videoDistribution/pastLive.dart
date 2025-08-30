@@ -21,8 +21,6 @@ class _PastLive extends State<PastLive>
   bool _isMounted = false;
   late Future<List<dynamic>> _videoList;
 
-  // ネイティブ広告ウィジェットキャッシュは廃止
-
   Widget videoWidget(Map<String, dynamic> data, DateTime now, double height) {
     return VideoWidget(
       data: data,
@@ -53,8 +51,6 @@ class _PastLive extends State<PastLive>
     _videoList = _loadData();
   }
 
-  // _initNativeAds, getNextNativeAd は不要になったので削除
-
   @override
   void dispose() {
     _isMounted = false;
@@ -76,6 +72,7 @@ class _PastLive extends State<PastLive>
     debugPrint("didChangeDependencies");
   }
 
+  // ★ここを修正★
   Future<List<dynamic>> _loadData() async {
     try {
       final List<dynamic> fetchedCLives =
@@ -83,11 +80,16 @@ class _PastLive extends State<PastLive>
       await Future.delayed(const Duration(seconds: 2));
       List<dynamic> videoList = [];
       if (_isMounted) {
-        List<dynamic> _videoList = filterByOfficeIndices(
-            fetchedCLives,
+        // Providerから選択中のchannelId一覧を取得
+        final selectedChannelIds =
             Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories,
-            "video");
+                .allSelectedchannelIds;
+
+        // channelIdでフィルタ
+        List<dynamic> _videoList = fetchedCLives
+            .where((data) => selectedChannelIds.contains(data['channelId']))
+            .toList();
+
         List<dynamic> dataPast = _videoList.where((data) {
           DateTime comparisonDayUTC = DateTime.parse(data['comparisonDay']);
           DateTime comparisonDayJST = comparisonDayUTC.toLocal();
