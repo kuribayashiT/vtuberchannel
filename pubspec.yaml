@@ -17,7 +17,7 @@ description: "A new Flutter project."
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 2.1.15+1
+version: 2.1.17+1
 
 
 environment:
@@ -38,6 +38,7 @@ dependencies:
   path: ^1.9.0
   shared_preferences: ^2.2.2
   webview_flutter: ^4.4.4
+  webview_flutter_wkwebview: ^3.19.0
   cached_network_image: ^3.4.0
   flutter_cache_manager: ^3.4.1
   sqflite: ^2.4.1 # sqfliteのバージョンを追加
@@ -67,7 +68,7 @@ dependencies:
   firebase_storage: ^13.0.0
   firebase_database: ^12.0.0
   firebase_app_check: ^0.4.0
-  youtube_player_iframe: ^5.1.2
+  youtube_player_iframe: ^5.2.2
   # youtube_player_flutter: ^8.1.2
 
   # The following adds the Cupertino Icons font to your application.

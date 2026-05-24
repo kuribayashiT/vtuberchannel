@@ -19,7 +19,13 @@ async function youtubeUpload(bucketName, fileName, videoTitle, videoDescription,
 
   // 認証情報の読み込み
   const credentials = JSON.parse(fs.readFileSync(path.join(__dirname, 'client_secret.json')));
-  const token = JSON.parse(fs.readFileSync(path.join(__dirname, 'youtube_token.json')));
+  // トークンファイル名は環境変数 YOUTUBE_TOKEN_FILE で切り替え可能（デフォルト: youtube_token.json）
+  const tokenFileName = process.env.YOUTUBE_TOKEN_FILE || 'youtube_token.json';
+  const tokenPath = path.join(__dirname, tokenFileName);
+  if (!fs.existsSync(tokenPath)) {
+    throw new Error(`YouTube token file not found: ${tokenPath}. Set YOUTUBE_TOKEN_FILE env var or place the token file in functions directory.`);
+  }
+  const token = JSON.parse(fs.readFileSync(tokenPath));
 
   const { client_secret, client_id, redirect_uris } = credentials.installed;
   const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);

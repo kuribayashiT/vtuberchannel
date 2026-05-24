@@ -60,6 +60,14 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 const db = admin.database(); // ←これを追加
 const firestoreDB = admin.firestore();
+
+// NOTE:
+// If you want to upload videos to a specific YouTube channel, provide a
+// corresponding OAuth token file for that channel and set the environment
+// variable YOUTUBE_TOKEN_FILE to the filename (placed in the functions/ dir)
+// Example (local deploy):
+//   export YOUTUBE_TOKEN_FILE="youtube_token_channel_A.json"
+// Then deploy Cloud Functions so youtubeUpload will pick that token file.
 // ...existing code...
 // RSSパーサーをグローバルで初期化
 const Parser = require('rss-parser');
@@ -970,11 +978,9 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             allYoutubeData.push(youtubeValueAdd);
 
             // rankingYoutubeRegiDataに格納
-            const thumbnailUrl = channel_result.snippet.thumbnails.high?.url || channel_result.snippet.thumbnails.default?.url;
-
             const rankingYoutubeRegi = Object.assign({}, {
               channelId: membar_channel_id,
-              channelThumbnail: thumbnailUrl,
+              channelThumbnail: channel_result.snippet.thumbnails.high.url,
               name: channel_result.snippet.title,
               office: await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
               youtubeSubscriberCount: channel_result.statistics.subscriberCount
@@ -984,7 +990,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             // rankingVideoCountDataに格納
             const rankingVideoCount = Object.assign({}, {
               channelId: membar_channel_id,
-              channelThumbnail: thumbnailUrl,
+              channelThumbnail: channel_result.snippet.thumbnails.high.url,
               name: channel_result.snippet.title,
               office: await mapOfficeStringSafeAsync(channelMap[membar_channel_id].officeKey),
               videoCount: channel_result.statistics.videoCount
@@ -2229,10 +2235,16 @@ exports.generateBlogVideoFromLatestNews = functions
       await deleteGcsFile(bucketName, `output/output-${uuid}.wav`);
       await deleteGcsFile(bucketName, `output/output-${uuid}.srt`);
 
-      // ==============================================================================  
-      // 動画アップロード実行
-      // ==============================================================================
-      videoId = await youtubeUpload(bucketName, outputFilePath, videoTitle, videoDescription, videoTags, thumbnail);
+  // ==============================================================================  
+  // 動画アップロード実行
+  // ==============================================================================
+  // アップロード先チャンネルを固定（指定のチャンネル用トークンファイルを使用）
+  // トークンファイルは functions/ 配下に置いてください。
+  // 例ファイル名: functions/youtube_token_UC5Ci1AAAYsIWnnHmcUTxlnQ.json
+  // この行を編集すれば別チャンネルへ切り替え可能です。
+  process.env.YOUTUBE_TOKEN_FILE = 'youtube_token_UC5Ci1AAAYsIWnnHmcUTxlnQ.json';
+
+  videoId = await youtubeUpload(bucketName, outputFilePath, videoTitle, videoDescription, videoTags, thumbnail);
       await deleteGcsFile(bucketName, outputFilePath);
 
       resultMessage = `動画を生成してYouTubeにアップロードしました: https://youtu.be/${videoId}`;

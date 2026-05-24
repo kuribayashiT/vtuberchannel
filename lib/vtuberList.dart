@@ -409,15 +409,18 @@ class _vtuberList extends State<vtuberList> with TickerProviderStateMixin {
                                                       itemBuilder:
                                                           (context, index) {
                                                         return _buildTableRow(
-                                                            findKeyFromName(
-                                                                dataMap[
-                                                                    'office']),
-                                                            // dataMap['office'] ??
-                                                            //     '',
+                                                            dataMap['office'] ??
+                                                                '',
                                                             dataMap['name'] ??
                                                                 '',
-                                                            dataMap['birthday'] ??
-                                                                '-',
+                                                            (dataMap['birthday'] ==
+                                                                        null ||
+                                                                    dataMap['birthday']
+                                                                        .toString()
+                                                                        .isEmpty)
+                                                                ? '-'
+                                                                : dataMap[
+                                                                    'birthday'],
                                                             dataMap['videoCount'] ??
                                                                 '',
                                                             dataMap['youtubeSubscriberCountTransition']

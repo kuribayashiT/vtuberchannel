@@ -833,7 +833,7 @@ class GoogleCloudFunctions {
       //   }
       // } else {
       Response response = await Dio().get(
-        'https://storage.googleapis.com/vtuber-335811.appspot.com/rankingYoutubeVideoCountData.json',
+        'https://storage.googleapis.com/vtuber-335811.appspot.com/rankingVideoCountData.json',
         options: Options(responseType: ResponseType.plain, headers: {
           'Access-Control-Allow-Origin': '*', // すべてのオリジンからのリクエストを許可
           // 必要に応じて、他のCORS関連のヘッダーを追加することもできます

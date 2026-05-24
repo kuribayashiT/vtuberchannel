@@ -1,5 +1,4 @@
 {
-  "type": "commonjs",
   "name": "functions",
   "description": "Cloud Functions for Firebase",
   "scripts": {
@@ -26,7 +25,7 @@
     "googleapis": "^129.0.0",
     "kuromoji": "^0.1.2",
     "nodemailer": "^6.9.7",
-    "open": "^10.1.2",
+    "open": "^10.2.0",
     "openai": "^4.91.1",
     "puppeteer": "^24.7.2",
     "puppeteer-core": "^24.7.2",

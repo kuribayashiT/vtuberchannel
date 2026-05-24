@@ -13,7 +13,8 @@ import 'package:vtuberchannel/Chat/ThreadListPage.dart';
 import 'package:vtuberchannel/firebase_options.dart';
 import 'favorite_screen.dart';
 import 'youtubeplayer.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_app_badger/flutter_app_badger.dart';
 import 'eventCalendar.dart';
 import 'package:flutter/cupertino.dart';
@@ -23,7 +24,8 @@ import 'package:vtuberchannel/option/pushSetting.dart';
 import 'package:vtuberchannel/option/setting.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../webView.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:provider/provider.dart';
 import 'common.dart';
 import 'videoDistribution/videoDistribution.dart';
@@ -218,14 +220,7 @@ class MyHomePageState extends State<MyHomePage>
     FirebaseRemoteConfigService().initRemoteConfig();
     WidgetsBinding.instance.addObserver(this);
     // pushNotification instance = pushNotification();
-    _controller = YoutubePlayerController(
-      // initialVideoId: 'VIDEO_ID',
-      params: const YoutubePlayerParams(
-          // autoPlay: true,
-          mute: false,
-          // disableDragSeek: true,
-          showFullscreenButton: false),
-    );
+    _controller = _createWebViewController();
 
     _youtubePlayerState = YoutubePlayerState();
     fetchOldOshirase();
@@ -731,7 +726,84 @@ class FavoriteVideoData with ChangeNotifier {
 // late YoutubePlayerController controller;
 bool isPlayable = true;
 
-late YoutubePlayerController _controller;
+late WebViewController _controller;
+
+WebViewController _createWebViewController() {
+  late WebViewController ctrl;
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+    final params = WebKitWebViewControllerCreationParams(
+      allowsInlineMediaPlayback: true,
+      mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
+    );
+    ctrl = WebViewController.fromPlatformCreationParams(params);
+  } else {
+    ctrl = WebViewController();
+  }
+  ctrl
+    ..setJavaScriptMode(JavaScriptMode.unrestricted)
+    ..setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) '
+        'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 '
+        'Mobile/15E148 Safari/604.1')
+    ..setNavigationDelegate(NavigationDelegate(
+      onNavigationRequest: (NavigationRequest request) {
+        final url = request.url;
+        if (url.contains('youtube.com') ||
+            url.contains('youtu.be') ||
+            url.contains('googlevideo.com') ||
+            url.contains('ytimg.com') ||
+            url.contains('gstatic.com') ||
+            url.contains('google.com')) {
+          return NavigationDecision.navigate;
+        }
+        return NavigationDecision.prevent;
+      },
+      onPageFinished: (String url) {
+        ctrl.runJavaScript('''
+          (function() {
+            var style = document.createElement('style');
+            style.textContent = `
+              ytm-mobile-topbar-renderer,
+              ytm-pivot-bar-renderer,
+              ytm-slim-video-action-bar-renderer,
+              ytm-section-list-renderer,
+              ytm-comments-entry-point-header-renderer,
+              ytm-item-section-renderer,
+              ytm-button-renderer,
+              ytm-like-button-renderer,
+              .responsive-container.ytm-watch,
+              .slim-video-information-renderer,
+              .slim-video-metadata-renderer,
+              #player-container-outer { margin:0 !important; padding:0 !important; }
+              ytm-app, .page-container, #content {
+                background: #000 !important;
+              }
+            `;
+            document.head.appendChild(style);
+
+            function fitPlayer() {
+              var player = document.getElementById('player-container-id')
+                        || document.querySelector('#movie_player')
+                        || document.querySelector('ytm-player')
+                        || document.querySelector('.html5-video-container')
+                        || document.querySelector('video');
+              if (player) {
+                player.style.cssText = 'position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;z-index:9999!important;background:#000!important;';
+              }
+              var video = document.querySelector('video');
+              if (video) {
+                video.style.cssText = 'position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;object-fit:contain!important;z-index:9999!important;background:#000!important;';
+                video.setAttribute('playsinline', '');
+              }
+            }
+            fitPlayer();
+            setTimeout(fitPlayer, 500);
+            setTimeout(fitPlayer, 1500);
+          })();
+        ''');
+      },
+    ));
+  return ctrl;
+}
 
 //bool isYoutubePlayerVisible = false;
 class YoutubePlayerState with ChangeNotifier {
@@ -739,7 +811,7 @@ class YoutubePlayerState with ChangeNotifier {
   bool _isChangingVideo = false;
   bool get isChangingVideo => _isChangingVideo;
 
-  YoutubePlayerController get controller => _controller;
+  WebViewController get controller => _controller;
 
   bool _isYoutubePlayerVisible = false;
   String _videoId = ''; // 追加: 動画のID
@@ -756,35 +828,16 @@ class YoutubePlayerState with ChangeNotifier {
     _isChangingVideo = true;
     _videoId = videoId;
     isPlayable = true;
-    _videoId = videoId;
+
+    final url = Uri.parse('https://m.youtube.com/watch?v=$videoId');
+
     if (_overlayEntry == null) {
       showOverlay(openContext);
-      if (isPlayable) {
-        _controller = YoutubePlayerController(
-          params: const YoutubePlayerParams(
-              // autoPlay: true,
-              mute: false,
-              // disableDragSeek: true,
-              showFullscreenButton: false),
-          // initialVideoId: videoId,
-        );
-        _controller.loadVideoById(videoId: videoId);
-      }
     } else {
-      // _controller.load(videoId);
       hideOverlay();
       showOverlay(openContext);
-
-      _controller = YoutubePlayerController(
-        params: const YoutubePlayerParams(
-            // autoPlay: true,
-            mute: false,
-            // disableDragSeek: true,
-            showFullscreenButton: false),
-        // initialVideoId: videoId,
-      );
-      _controller.loadVideoById(videoId: videoId);
     }
+    await _controller.loadRequest(url);
     _isChangingVideo = false;
   }
 

@@ -1,3 +1,51 @@
+// 新規VTuber候補一覧を取得・表示
+async function loadNewVtuberCandidates() {
+    const listElem = document.getElementById('newVtuberCandidatesList');
+    listElem.innerHTML = '<div class="loading">読み込み中...</div>';
+    try {
+        const res = await fetch('https://storage.googleapis.com/vtuber-335811.appspot.com/newVtuberCandidates.json');
+        if (!res.ok) throw new Error('取得失敗: ' + res.status);
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+            listElem.innerHTML = '<div style="color:#888;">候補データがありません。</div>';
+            return;
+        }
+        // テーブル表示（チェックボックス列追加）
+        let html = '<table class="vtuber-candidates-table" style="width:100%;border-collapse:collapse;">';
+        html += '<thead><tr style="background:#e3f2fd;"><th></th><th>名前</th><th>チャンネルID/@Handle</th><th>Twitter</th><th>事務所</th><th>誕生日</th><th>デビュー日</th></tr></thead><tbody>';
+        data.forEach((vt, idx) => {
+            html += `<tr data-row-idx="${idx}">
+                <td style="text-align:center;"><input type="checkbox" class="candidate-checkbox"></td>
+                <td>${vt.name || ''}</td>
+                <td>${vt.channelId || vt.handle || ''}</td>
+                <td>${vt.twitter || ''}</td>
+                <td>${vt.office || ''}</td>
+                <td>${vt.birthday || ''}</td>
+                <td>${vt.debut || ''}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        listElem.innerHTML = html;
+        // 新規VTuber候補一覧のチェック行を一括削除（画面上のみ）
+        function deleteCheckedCandidates() {
+            const listElem = document.getElementById('newVtuberCandidatesList');
+            if (!listElem) return;
+            const table = listElem.querySelector('table');
+            if (!table) return;
+            const checkboxes = table.querySelectorAll('input.candidate-checkbox:checked');
+            if (checkboxes.length === 0) {
+                alert('削除する候補を選択してください');
+                return;
+            }
+            checkboxes.forEach(cb => {
+                const row = cb.closest('tr');
+                if (row) row.remove();
+            });
+        }
+    } catch (e) {
+        listElem.innerHTML = `<div style="color:#e57373;">取得エラー: ${e.message}</div>`;
+    }
+}
 // 選択中の事務所名を取得
 function getSelectedOffice() {
     const selectedPanel = document.querySelector('.office-panel-cute.selected');
@@ -169,36 +217,6 @@ function showStatus(message, type = 'info') {
             generateOfficeRadioButtons(fallbackList, fallbackMapping);
         }
     }
-    //     if (Object.keys(analysis.officeDistribution).length > 0) {
-    //         html += '<h3>📈 事務所別分布</h3><ul>';
-    //         for (const [office, count] of Object.entries(analysis.officeDistribution)) {
-    //             html += `<li><strong>${office}</strong>: ${count}人</li>`;
-    //         }
-    //         html += '</ul>';
-    //     }
-    //     // 問題があるデータ
-    //     if (analysis.duplicateChannelIds.length > 0) {
-    //         html += '<h3>⚠️ 重複チャンネルID</h3><ul>';
-    //         analysis.duplicateChannelIds.forEach(id => {
-    //             html += `<li>${id}</li>`;
-    //         });
-    //         html += '</ul>';
-    //     }
-    //     if (analysis.invalidChannelIds.length > 0) {
-    //         html += '<h3>❌ 無効なチャンネルID</h3><ul>';
-    //         analysis.invalidChannelIds.forEach(item => {
-    //             html += `<li>${item.member}: ${item.channelId}</li>`;
-    //         });
-    //         html += '</ul>';
-    //     }
-    //     document.getElementById('analysis-result').innerHTML = html;
-    //     showStatus('✅ データ分析が完了しました', 'success');
-    //     showProgress(false);
-    // } catch (error) {
-    //     console.error('Analysis error:', error);
-    //     showStatus(`❌ 分析エラー: ${error.message}`, 'error');
-    //     showProgress(false);
-    // }
 }
 // ファイルアップロード処理
 function handleFileUpload(event) {
@@ -210,11 +228,6 @@ function handleFileUpload(event) {
         showStatus(`📄 ファイル "${file.name}" を読み込みました`, 'success');
     };
     reader.readAsText(file);
-}
-// データ検証のみ
-async function validateData() {
-    document.getElementById('importMode').value = 'validate';
-    await importData();
 }
 // データインポート
 async function importData() {
@@ -1170,54 +1183,6 @@ function displayVtuberList(vtubers) {
 
 // ...Office管理・VTuber追加・重複チェック・Auto Discover等の関数はvtuber-data-manager-new.jsに集約...
 
-// データエクスポート
-async function exportData(format) {
-    try {
-        showStatus('📊 データをエクスポートしています...', 'info');
-        showProgress(true, 30);
-
-        const response = await fetch(`${currentApiBase}/exportVtuberData?format=${format}`);
-        const result = await response.json();
-
-        if (result.success) {
-            let filename, content, mimeType;
-
-            if (format === 'csv') {
-                filename = `vtuber-data-${new Date().toISOString().split('T')[0]}.csv`;
-                content = result.csvData;
-                mimeType = 'text/csv';
-            } else if (format === 'template') {
-                filename = `vtuber-template-${new Date().toISOString().split('T')[0]}.csv`;
-                content = result.csvData;
-                mimeType = 'text/csv';
-            } else {
-                filename = `vtuber-data-${new Date().toISOString().split('T')[0]}.json`;
-                content = JSON.stringify(result.data, null, 2);
-                mimeType = 'application/json';
-            }
-
-            // ファイルダウンロード
-            const blob = new Blob([content], { type: mimeType });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-
-            showStatus(`✅ ${filename} をダウンロードしました (${result.totalRecords}件)`, 'success');
-            showProgress(false);
-        } else {
-            throw new Error(result.message || 'エクスポートに失敗しました');
-        }
-    } catch (error) {
-        console.error('Export error:', error);
-        showStatus(`❌ エクスポートエラー: ${error.message}`, 'error');
-        showProgress(false);
-    }
-}
 
 // ファイルアップロード処理
 function handleFileUpload(event) {
@@ -1569,10 +1534,53 @@ function updateBulkStats() {
 
 // 一括登録実行
 async function bulkAddVtubers() {
-    const selectedOffice = getSelectedOffice();
+    // 「その他」選択時はカスタム入力欄から値を取得
+    let selectedOffice = getSelectedOffice();
+    let officeDisplayName = selectedOffice;
+
+    const customOfficeKeyInput = document.getElementById('customOfficeKey');
+    const customOfficeDisplayNameInput = document.getElementById('customOfficeDisplayName');
+    const isOtherSelected = selectedOffice === 'other';
+
+    if (isOtherSelected) {
+        if (!customOfficeKeyInput.value.trim() || !customOfficeDisplayNameInput.value.trim()) {
+            showStatus('❌ 新しい事務所キーと表示名を入力してください', 'error');
+            return;
+        }
+        selectedOffice = customOfficeKeyInput.value.trim();
+        officeDisplayName = customOfficeDisplayNameInput.value.trim();
+    }
+
     if (!selectedOffice) {
         showStatus('❌ 事務所を選択してください', 'error');
         return;
+    }
+
+    // 事務所が未登録の場合は先にOffice登録APIを呼び出す
+    let officeArr = Array.isArray(window.officeList) ? window.officeList : [];
+    if (selectedOffice && !officeArr.includes(selectedOffice)) {
+        showStatus(`🏢 新規事務所「${officeDisplayName}」を登録しています...`, 'info');
+        try {
+            const response = await fetch(`${currentApiBase}/addOffice`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    officeKey: selectedOffice,
+                    officeName: officeDisplayName // ← displayName → officeName に変更
+                })
+            });
+            const result = await response.json();
+            if (result.success) {
+                showStatus(`✅ 新規事務所「${officeDisplayName}」を登録しました`, 'success');
+                await loadOfficeOptions();
+            } else {
+                showStatus(`❌ 事務所登録失敗: ${result.error || '不明なエラー'}`, 'error');
+                return;
+            }
+        } catch (error) {
+            showStatus(`❌ 事務所登録エラー: ${error.message}`, 'error');
+            return;
+        }
     }
 
     const validEntries = document.querySelectorAll('.vtuber-entry.valid');
@@ -1619,14 +1627,13 @@ async function bulkAddVtubers() {
             }
             const vtuberData = {
                 name: nameInput.value.trim(),
-                channeID: channeID, // ← channeIDで送信
+                channeID: channeID,
                 twitterName: twitterInput.value.trim(),
                 birthday: birthdayValue,
                 office: selectedOffice,
                 officeFlg: officeFlgRadio.value === 'true',
-                debut: debutValue // 空でも必ず送信
+                debut: debutValue
             };
-            // @Handleの場合は自動変換
             if (vtuberData.channeID.startsWith('@')) {
                 const convertedId = await convertHandleToChannelId(vtuberData.channeID);
                 vtuberData.channeID = convertedId;
@@ -1662,15 +1669,14 @@ async function bulkAddVtubers() {
 
         if (results.length > 0) {
             document.getElementById('addResult').innerHTML = `
-                        <h3>詳細結果</h3>
-                        <div style="max-height: 200px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 4px;">
-                            ${results.join('<br>')}
-                        </div>
-                    `;
+                <h3>詳細結果</h3>
+                <div style="max-height: 200px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 4px;">
+                    ${results.join('<br>')}
+                </div>
+            `;
             document.getElementById('addResult').style.display = 'block';
         }
 
-        // 既存データキャッシュを更新
         await loadExistingVtuberData();
         updateBulkStats();
 

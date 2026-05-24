@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter/foundation.dart'; 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:vtuberchannel/main.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 class YoutubePlayerView extends StatefulWidget {
   @override
@@ -112,18 +112,8 @@ class _YoutubePlayerView extends State<YoutubePlayerView> {
                         value: _youtubePlayerState,
                         child: Consumer<YoutubePlayerState>(
                           builder: (context, playerState, _) {
-                            return YoutubePlayerScaffold(
+                            return WebViewWidget(
                               controller: playerState.controller,
-                              // showVideoProgressIndicator: true,
-                              builder: (context, player) {
-                                if (playerState.isChangingVideo) {
-                                  // 動画を切り替える際はローディング中のインジケータを表示
-                                  return const Center(
-                                      child: CircularProgressIndicator());
-                                } else {
-                                  return player;
-                                }
-                              },
                             );
                           },
                         ),

@@ -1,6 +1,7 @@
 import 'package:provider/provider.dart';
 import 'googleCloudFunctions.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SideMenu extends StatefulWidget {
   const SideMenu({super.key});
@@ -89,128 +90,142 @@ class _SideMenu extends State<SideMenu> {
     final selectedVtubersByOffice = selectedCategorie.selectedVtubersByOffice;
 
     return Drawer(
-      child: Builder(
-        builder: (drawerContext) {
-          return Column(
-            children: <Widget>[
-              SizedBox(
-                height: 150,
-                child: DrawerHeader(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'フィルター',
-                          style: TextStyle(fontSize: 18),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
+      child: Builder(builder: (drawerContext) {
+        return Column(
+          children: <Widget>[
+            SizedBox(
+              height: 150,
+              child: DrawerHeader(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'フィルター',
+                        style: TextStyle(fontSize: 18),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        padding: EdgeInsets.zero,
-                        constraints: BoxConstraints(),
-                        onPressed: () {
-                          Navigator.of(drawerContext).pop();
-                        },
-                      ),
-                    ],
-                  ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints(),
+                      onPressed: () {
+                        Navigator.of(drawerContext).pop();
+                      },
+                    ),
+                  ],
                 ),
               ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.only(bottom: 100),
-                  child: Column(
-                    children: <Widget>[
-                      if (officeList.isEmpty)
-                        const Padding(
-                            padding: EdgeInsets.only(top: 60.0),
-                            child: Center(child: CircularProgressIndicator()))
-                      else
-                        for (String office in officeList)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 0),
-                                onTap: () => _toggleOffice(office),
-                                leading: Transform.scale(
-                                  scale: 1.1,
-                                  child: Checkbox(
-                                    side: const BorderSide(
-                                        width: 0, color: Colors.white),
-                                    checkColor: Colors.black,
-                                    fillColor:
-                                        MaterialStateProperty.resolveWith(
-                                            (states) => Colors.white),
-                                    value: selectedCategorie
-                                        .isOfficeAllSelected(office),
-                                    tristate: false,
-                                    onChanged: (checked) =>
-                                        selectedCategorie.toggleOfficeAll(
-                                            office, checked ?? false),
-                                    materialTapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                ),
-                                title: Row(
-                                  children: [
-                                    (office == '個人' || office == 'person')
-                                        ? CircleAvatar(
-                                            radius: 12,
-                                            backgroundColor:
-                                                Colors.grey.shade200,
-                                            child: const Icon(Icons.person,
-                                                size: 16, color: Colors.grey),
-                                          )
-                                        : CircleAvatar(
-                                            radius: 12,
-                                            backgroundImage: NetworkImage(
-                                                officeIcons[office] ?? ''),
-                                            backgroundColor:
-                                                Colors.grey.shade200,
-                                            onBackgroundImageError: (_, __) =>
-                                                const Icon(
-                                              Icons.image_not_supported,
-                                              size: 16,
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                    const SizedBox(width: 2),
-                                    Expanded(
-                                      child: Text(
-                                        office,
-                                        overflow: TextOverflow.ellipsis,
-                                        maxLines: 1,
-                                        style: const TextStyle(fontSize: 15),
-                                      ),
-                                    ),
-                                    Icon(
-                                      expandedOffices.contains(office)
-                                          ? Icons.expand_less
-                                          : Icons.expand_more,
-                                      size: 20,
-                                    ),
-                                  ],
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 100),
+                child: Column(
+                  children: <Widget>[
+                    if (officeList.isEmpty)
+                      const Padding(
+                          padding: EdgeInsets.only(top: 60.0),
+                          child: Center(child: CircularProgressIndicator()))
+                    else
+                      for (String office in officeList)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 0),
+                              onTap: () => _toggleOffice(office),
+                              leading: Transform.scale(
+                                scale: 1.1,
+                                child: Checkbox(
+                                  side: const BorderSide(
+                                      width: 0, color: Colors.white),
+                                  checkColor: Colors.black,
+                                  fillColor: MaterialStateProperty.resolveWith(
+                                      (states) => Colors.white),
+                                  value: selectedCategorie
+                                      .isOfficeAllSelected(office),
+                                  tristate: false,
+                                  onChanged: (checked) =>
+                                      selectedCategorie.toggleOfficeAll(
+                                          office, checked ?? false),
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
                                 ),
                               ),
-                              if (expandedOffices.contains(office))
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 32.0),
-                                  child: Column(
-                                    children: [
-                                      for (var vtuber
-                                          in vtuberListByOffice[office] ?? [])
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 6.0),
+                              title: Row(
+                                children: [
+                                  (office == '個人' || office == 'person')
+                                      ? CircleAvatar(
+                                          radius: 12,
+                                          backgroundColor: Colors.grey.shade200,
+                                          child: const Icon(Icons.person,
+                                              size: 16, color: Colors.grey),
+                                        )
+                                      : CircleAvatar(
+                                          radius: 12,
+                                          backgroundImage: NetworkImage(
+                                              officeIcons[office] ?? ''),
+                                          backgroundColor: Colors.grey.shade200,
+                                          onBackgroundImageError: (_, __) =>
+                                              const Icon(
+                                            Icons.image_not_supported,
+                                            size: 16,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                  const SizedBox(width: 2),
+                                  Expanded(
+                                    child: Text(
+                                      office,
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                      style: const TextStyle(fontSize: 15),
+                                    ),
+                                  ),
+                                  Icon(
+                                    expandedOffices.contains(office)
+                                        ? Icons.expand_less
+                                        : Icons.expand_more,
+                                    size: 20,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (expandedOffices.contains(office))
+                              Padding(
+                                padding: const EdgeInsets.only(left: 32.0),
+                                child: Column(
+                                  children: [
+                                    for (var vtuber
+                                        in vtuberListByOffice[office] ?? [])
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 6.0),
+                                        child: InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                          onTap: () {
+                                            if (vtuber['channeID'] != null) {
+                                              final isChecked =
+                                                  selectedVtubersByOffice[
+                                                              office]
+                                                          ?.contains(vtuber[
+                                                              'channeID']) ??
+                                                      false;
+                                              selectedCategorie.toggleVtuber(
+                                                office,
+                                                vtuber['channeID'],
+                                                !isChecked,
+                                              );
+                                            }
+                                          },
                                           child: Row(
                                             children: [
                                               Transform.scale(
@@ -239,10 +254,10 @@ class _SideMenu extends State<SideMenu> {
                                                         null) {
                                                       selectedCategorie
                                                           .toggleVtuber(
-                                                              office,
-                                                              vtuber[
-                                                                  'channeID'],
-                                                              checked ?? false);
+                                                        office,
+                                                        vtuber['channeID'],
+                                                        checked ?? false,
+                                                      );
                                                     }
                                                   },
                                                   materialTapTargetSize:
@@ -283,19 +298,19 @@ class _SideMenu extends State<SideMenu> {
                                             ],
                                           ),
                                         ),
-                                    ],
-                                  ),
+                                      )
+                                  ],
                                 ),
-                            ],
-                          ),
-                    ],
-                  ),
+                              ),
+                          ],
+                        ),
+                  ],
                 ),
               ),
-            ],
-          );
-        },
-      ),
+            ),
+          ],
+        );
+      }),
     );
   }
 }
@@ -321,7 +336,14 @@ class SelectedCategorie with ChangeNotifier {
           (office) => (_selectedVtubersByOffice[office]?.isNotEmpty ?? false))
       .toList();
 
+  Future<void> _saveSelectedChannelIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+        'selectedChannelIds', allSelectedchannelIds.toList());
+  }
+
   // 初期化（詳細情報もセット）
+  // setOfficeDataFullの最後で呼ぶ
   void setOfficeDataFull({
     required List<String> officeOrder,
     required Map<String, String> officeIcons,
@@ -336,6 +358,27 @@ class SelectedCategorie with ChangeNotifier {
       _selectedVtubersByOffice.putIfAbsent(office, () => <String>{});
     }
     notifyListeners();
+    restoreSelectedChannelIds(); // ←追加
+  }
+
+  Future<void> restoreSelectedChannelIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('selectedChannelIds');
+    if (saved == null || saved.isEmpty) {
+      // 初回起動時は全選択
+      for (final office in _officeOrder) {
+        final ids = _channelIdsByOffice[office] ?? [];
+        _selectedVtubersByOffice[office] = ids.toSet();
+      }
+    } else {
+      // 2回目以降は保存値で復元
+      for (final office in _officeOrder) {
+        final ids = _channelIdsByOffice[office] ?? [];
+        _selectedVtubersByOffice[office] =
+            ids.where((id) => saved.contains(id)).toSet();
+      }
+    }
+    notifyListeners();
   }
 
   // Office単位で全Vtuber選択/解除
@@ -347,6 +390,7 @@ class SelectedCategorie with ChangeNotifier {
       _selectedVtubersByOffice[office] = {};
     }
     notifyListeners();
+    _saveSelectedChannelIds();
   }
 
   // Vtuber単位の選択/解除
@@ -359,6 +403,7 @@ class SelectedCategorie with ChangeNotifier {
     }
     _selectedVtubersByOffice[office] = vtuberSet;
     notifyListeners();
+    _saveSelectedChannelIds();
   }
 
   // すべての選択channelId（Play/Ranking/Vtuberタブのフィルタ用）
