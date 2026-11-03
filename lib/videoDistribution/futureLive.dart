@@ -6,6 +6,7 @@ import 'package:vtuberchannel/main.dart';
 import 'package:vtuberchannel/sideMenu.dart';
 import '../googleCloudFunctions.dart';
 import 'videoDistribution.dart';
+import '../widgets/cute_loading_widget.dart';
 
 class FutureLive extends StatefulWidget {
   @override
@@ -13,13 +14,18 @@ class FutureLive extends StatefulWidget {
 }
 
 class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
-  Set<String> selectedCategories = {}; // 選択されたカテゴリを保持する変数
+  Set<String> selectedCategories = {};
   List<dynamic> videoList = [];
   bool _isMounted = false;
   late SelectedCategorie myState;
   late FavoriteVideoData myFavorteState;
   late PushRegisterState myPushState;
   late Future<List<dynamic>> _videoList;
+
+  // ネイティブ広告ウィジェットキャッシュ
+  final List<Widget> _nativeAdWidgets = [];
+  int _nativeAdIndex = 0;
+
   Widget videoWidget(Map<String, dynamic> data, DateTime now, double height) {
     return VideoWidget(
       data: data,
@@ -29,7 +35,6 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
     );
   }
 
-  // KeepAlive関連のコードを追加
   @override
   bool get wantKeepAlive => true;
 
@@ -38,26 +43,45 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
     super.initState();
     _isMounted = true;
     myState = Provider.of<SelectedCategorie>(context, listen: false);
-    myState.addListener(_onDataUpdated); // リスナーを登録
+    myState.addListener(_onDataUpdated);
     myFavorteState = Provider.of<FavoriteVideoData>(context, listen: false);
-    myFavorteState.addListener(_onDataUpdated); // リスナーを登録
+    myFavorteState.addListener(_onDataUpdated);
     myPushState = Provider.of<PushRegisterState>(context, listen: false);
-    myPushState.addListener(_onDataUpdated); // リスナーを登録
+    myPushState.addListener(_onDataUpdated);
 
-    if (kIsWeb) {
-    } else {
-      // Admob
-      adHelper.loadNativeAds();
+    if (!kIsWeb) {
+      _initNativeAds();
     }
     _videoList = _loadData();
+  }
+
+  void _initNativeAds() {
+    _nativeAdWidgets.clear();
+    for (int i = 0; i < 3; i++) {
+      _nativeAdWidgets.add(adHelper.buildNextNativeAdWidget());
+    }
+    _nativeAdIndex = 0;
+    adHelper.loadBannerAds();
+  }
+
+  Widget getNextNativeAd({double? width, double? height}) {
+    if (_nativeAdWidgets.isEmpty) return const SizedBox.shrink();
+    final ad = _nativeAdWidgets[_nativeAdIndex % _nativeAdWidgets.length];
+    _nativeAdIndex++;
+    if (width != null && height != null) {
+      return SizedBox(width: width, height: height, child: ad);
+    }
+    return ad;
   }
 
   @override
   void dispose() {
     _isMounted = false;
-    myState.removeListener(_onDataUpdated); // リスナーを解除
-    myFavorteState.removeListener(_onDataUpdated); // リスナーを解除
-    myPushState.removeListener(_onDataUpdated); // リスナーを解除
+    myState.removeListener(_onDataUpdated);
+    myFavorteState.removeListener(_onDataUpdated);
+    myPushState.removeListener(_onDataUpdated);
+    adHelper.disposeNativeAds();
+    _nativeAdWidgets.clear();
     super.dispose();
   }
 
@@ -67,6 +91,7 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
     });
   }
 
+  // ★ここを修正★
   Future<List<dynamic>> _loadData() async {
     try {
       final List<dynamic> fetchedCLives =
@@ -74,22 +99,23 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
       await Future.delayed(const Duration(seconds: 2));
       List<dynamic> videoList = [];
       if (_isMounted) {
-        List<dynamic> _videoList = filterByOfficeIndices(
-            fetchedCLives,
+        // Providerから選択中のchannelId一覧を取得
+        final selectedChannelIds =
             Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories,
-            "video");
-        // 今日の日付
+                .allSelectedchannelIds;
+
+        // channelIdでフィルタ
+        List<dynamic> _videoList = fetchedCLives
+            .where((data) => selectedChannelIds.contains(data['channelId']))
+            .toList();
+
         DateTime now = DateTime.now();
-        // 二日後の日付
         DateTime twoDaysLater = DateTime(now.year, now.month, now.day + 2);
-        // 2週間後の日付
         DateTime twoWeeksLater = DateTime(now.year, now.month, now.day + 14);
+
         List<dynamic> dataFuture = _videoList.where((data) {
           DateTime comparisonDayUTC = DateTime.parse(data['comparisonDay']);
           DateTime comparisonDayJST = comparisonDayUTC.toLocal();
-
-          // 二日後以降＆2週間以内のデータを取得
           return comparisonDayJST.isAfter(twoDaysLater) &&
               comparisonDayJST.isBefore(twoWeeksLater);
         }).toList();
@@ -109,12 +135,17 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
 
   @override
   Widget build(BuildContext context) {
-
     double height = calculateItemHeight(context);
     double screenWidth = MediaQuery.of(context).size.width;
     super.build(context);
-    // // 今日の日付
     DateTime now = DateTime.now();
+
+    int row = 1;
+    if (screenWidth > 1000) {
+      row = 3;
+    } else if (screenWidth > 600) {
+      row = 2;
+    }
 
     return Scaffold(
       body: RefreshIndicator(
@@ -123,27 +154,33 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
           future: _videoList,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return const CuteLoadingWidget(
+                  message: '配信予定を読み込み中…', color: Colors.blueAccent);
             } else if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
+              return Center(child: Text('Error: ${snapshot.error}'));
             } else {
               List<dynamic> data = snapshot.data!;
               if (data.isEmpty) {
-                return const Center(child: Text('配信予定の動画はありません'));
+                return const Center(
+                  child: CuteEmptyWidget(
+                    message: '配信予定の動画はありません',
+                    icon: Icon(Icons.video_library,
+                        size: 56, color: Colors.blueAccent),
+                    color: Colors.blueAccent,
+                  ),
+                );
               } else {
                 try {
                   if (row > 1) {
                     return GridView.builder(
                       physics: const FasterScrollPhysics(),
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: row, // 列数を設定
-                        crossAxisSpacing: 8.0, // 列間のスペース
-                        mainAxisSpacing: 8.0, // 行間のスペース
-                        //childAspectRatio: 3 / 4, // 要素のアスペクト比
+                        crossAxisCount: row,
+                        crossAxisSpacing: 8.0,
+                        mainAxisSpacing: 8.0,
                       ),
                       itemCount: data.length,
                       itemBuilder: (context, index) {
-                        // Web用のレイアウトを構築する
                         return SizedBox(
                             child: videoWidget(data[index], now, height));
                       },
@@ -154,18 +191,14 @@ class _FutureLive extends State<FutureLive> with AutomaticKeepAliveClientMixin {
                       itemCount: data.length,
                       itemBuilder: (context, index) {
                         return Column(children: [
-                          SizedBox(child: videoWidget(data[index], now, height)),
-                          if (!kIsWeb)
-                            if (index % YoutubeNativeADInterval == 0)
-                              Align(
-                                alignment: Alignment.topCenter,
-                                child: SizedBox(
-                                  width: screenWidth,
-                                  height: height,
-                                  child: adHelper
-                                      .buildNativeAdWidgetNextAd(), //AdHelper().buildNativeAdWidget(),
-                                ),
-                              ),
+                          SizedBox(
+                              child: videoWidget(data[index], now, height)),
+                          if (!kIsWeb && index % YoutubeNativeADInterval == 0)
+                            Align(
+                              alignment: Alignment.topCenter,
+                              child: getNextNativeAd(
+                                  width: screenWidth, height: height),
+                            ),
                         ]);
                       },
                     );

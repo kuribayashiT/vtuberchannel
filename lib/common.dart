@@ -20,6 +20,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/data/latest.dart' as tzdata;
+import 'googleCloudFunctions.dart';
+import 'sideMenu.dart';
 // import 'package:vtuberchannel/videoDistribution/livePage.dart';
 import '/main.dart';
 // import 'package:flutter_native_timezone/flutter_native_timezone.dart';
@@ -41,10 +43,10 @@ String convertToJapanTime(String isoDateTime) {
 String convertToJapanDayTime(String isoDateTime) {
   try {
     DateTime dateTime = DateTime.parse(isoDateTime);
-    var japanTime = dateTime.toLocal();
-
-    String formattedTime = DateFormat('yyyy MM/dd HH:mm').format(japanTime);
-
+    // 端末のローカルタイムゾーンに変換
+    final localTime = dateTime.toLocal();
+    // フォーマット例: 2025/07/29 12:34
+    String formattedTime = DateFormat('yyyy/MM/dd HH:mm').format(localTime);
     return formattedTime;
   } catch (e) {
     return isoDateTime;
@@ -121,18 +123,25 @@ double calculateItemHeight(BuildContext context) {
 // Local Push
 // ===============================
 class pushNotification {
-  final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin =
+  final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
 
   FlutterLocalNotificationsPlugin get flutterLocalNotificationsPlugin =>
-      _flutterLocalNotificationsPlugin;
+      _plugin;
 
   Future<void> registerMessage(Map<String, dynamic> data) async {
     int notificationID = convertToJapanDayTimeToPushId(data["comparisonDay"]);
-    String jsonString =
-        '{"notificationId":"$notificationID","videoID":"${data["videoID"]}","title":"${data["title"]}","thumbnail":"${data["thumbnail"]}","comparisonDay":"${data["comparisonDay"]}"}';
-    Map<String, dynamic> payloadMap = json.decode(jsonString);
-    await _flutterLocalNotificationsPlugin.zonedSchedule(
+    // ここを修正！payloadをFCMのdata.payloadと同じ構造に
+    String payload = json.encode({
+      "title": data["title"],
+      "thumbnail": data["thumbnail"],
+      "videoID": data["videoID"],
+      "notificationId": notificationID,
+      "comparisonDay": data["comparisonDay"],
+      // 必要なら他の項目も追加
+    });
+
+    await _plugin.zonedSchedule(
       notificationID,
       "配信が始まります",
       data["title"],
@@ -145,15 +154,13 @@ class pushNotification {
           priority: Priority.high,
           ongoing: true,
           styleInformation:
-              BigTextStyleInformation(data["title"] + "の配信が始まります"),
+              BigTextStyleInformation("${data["title"]}の配信が始まります"),
           icon: 'ic_notification',
           additionalFlags: Int32List.fromList([1]),
         ),
-        iOS: const DarwinNotificationDetails(
-          badgeNumber: 1,
-        ),
+        iOS: const DarwinNotificationDetails(badgeNumber: 1),
       ),
-      payload: json.encode(payloadMap),
+      payload: payload,
       androidAllowWhileIdle: true,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
@@ -161,162 +168,84 @@ class pushNotification {
     );
   }
 
-  void checkForLocalPushNotifications() {
-    if (!kIsWeb) {
-      // int executionCount = 0; // 実行回数をカウントする変数
-      Timer.periodic(const Duration(seconds: 3), (timer) async {
-        // 実行回数をインクリメント
-        // executionCount++;
-        // 通知を取得
-        var pendingNotifications = await _flutterLocalNotificationsPlugin
-            .pendingNotificationRequests();
-        // 現在時刻
-        var now = DateTime.now();
-        print("Push Check:$now");
+  Future<void> init() async {
+    await _configureLocalTimeZone();
+    const android = AndroidInitializationSettings('ic_notification');
+    const ios = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+      onDidReceiveLocalNotification: onDidReceiveLocalNotification,
+    );
+    final settings = InitializationSettings(android: android, iOS: ios);
 
-        // 取得した通知を処理する
-        for (var notification in pendingNotifications) {
-          // 通知のペイロードから受信時刻を取得
-          if (notification.payload != null) {
-            var payloadMap = json.decode(notification.payload!);
-            var receivedTime = DateTime.parse(payloadMap['comparisonDay']);
-
-            // 受信時刻が現在時刻より過去の場合に処理を実行
-            if (receivedTime.isBefore(now)) {
-              // 通知に関する処理を実行
-              showNotificationDialog(notification.payload!);
-            }
-          }
+    await _plugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: (response) {
+        final payload = response.payload;
+        if (payload != null && payload.isNotEmpty) {
+          showNotificationDialog(payload);
         }
-        // // 指定回数に達したらタイマーを停止
-        // if (executionCount >= 3) {
-        //   timer.cancel();
-        //   print("タイマーを停止しました。");
-        // }
-      });
-    }
+      },
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+    );
   }
 
   Future<void> _configureLocalTimeZone() async {
     tz.initializeTimeZones();
-    // final String? timeZoneName = await FlutterNativeTimezone.getLocalTimezone();
-    // var timeZone = detroit.timeZone(timeInUtc.millisecondsSinceEpoch);
-    tz.setLocalLocation(tz.getLocation(tz.local.name));
+    tz.setLocalLocation(tz.getLocation('Asia/Tokyo'));
   }
 
-  Future<void> _initializeNotification() async {
-    //iOS設定
-    var initializationSettingsIOS = const DarwinInitializationSettings(
-        requestAlertPermission: true,
-        requestBadgePermission: true,
-        requestSoundPermission: true,
-        onDidReceiveLocalNotification: onDidReceiveLocalNotification);
-
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('ic_notification');
-
-    InitializationSettings initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-      iOS: initializationSettingsIOS,
-    );
-
-    // flutterLocalNotificationsPluginの初期化
-    await flutterLocalNotificationsPlugin.initialize(
-      initializationSettings,
-      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
-      onDidReceiveNotificationResponse:
-          (NotificationResponse notificationResponse) async {
-        final payload = notificationResponse.payload;
-        // 空文字なら何もしない
-        if (payload == null || payload.isEmpty) {
-          return;
-        }
-        showNotificationDialog(payload);
-      },
-    );
-    await _flutterLocalNotificationsPlugin.initialize(
-      initializationSettings,
-      onDidReceiveNotificationResponse:
-          (NotificationResponse notificationResponse) {
-        switch (notificationResponse.notificationResponseType) {
-          case NotificationResponseType.selectedNotification:
-            // showCustomView(notificationResponse.payload);
-            print("selectedNotification");
-            print(notificationResponse.payload);
-            break;
-          case NotificationResponseType.selectedNotificationAction:
-            // showCustomView(notificationResponse.payload);
-            print("selectedNotificationAction");
-            print(notificationResponse.payload);
-            // if (notificationResponse.actionId == navigationActionId) {
-            // }
-            break;
-        }
-        final payload = notificationResponse.payload;
-        // 空文字なら何もしない
-        if (payload == null || payload.isEmpty) {
-          return;
-        }
-        showNotificationDialog(payload);
-      },
-      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
-    );
+  // アプリ起動中に即時ダイアログを出したい場合
+  void showDialogForImmediatePush(Map<String, dynamic> data) {
+    String payload = json.encode({
+      "notificationId": data["notificationId"] ?? "",
+      "videoID": data["videoID"],
+      "title": data["title"],
+      "thumbnail": data["thumbnail"],
+      "comparisonDay": data["comparisonDay"],
+    });
+    showNotificationDialog(payload);
   }
 
   Future<bool> checkRegistPushFromVideoId(String videoID) async {
-    final List<PendingNotificationRequest> pendingNotifications =
-        await _flutterLocalNotificationsPlugin.pendingNotificationRequests();
-    for (PendingNotificationRequest element in pendingNotifications) {
-      Map<String, dynamic> payload = json.decode(element.payload!);
-      if (payload['videoID'] == videoID) {
-        return true;
+    final pending = await _plugin.pendingNotificationRequests();
+    for (var element in pending) {
+      if (element.payload != null) {
+        Map<String, dynamic> payload = json.decode(element.payload!);
+        if (payload['videoID'] == videoID) return true;
       }
     }
     return false;
   }
 
   Future<void> removeAllNotification() async {
-    await _flutterLocalNotificationsPlugin.cancelAll();
+    await _plugin.cancelAll();
   }
 
   Future<void> removeNotification(String notificationId) async {
-    final List<PendingNotificationRequest> pendingNotifications =
-        await _flutterLocalNotificationsPlugin.pendingNotificationRequests();
-    for (PendingNotificationRequest element in pendingNotifications) {
-      Map<String, dynamic> payload = json.decode(element.payload!);
-      if (payload['videoID'] == notificationId) {
-        await _flutterLocalNotificationsPlugin
-            .cancel(int.parse(payload["notificationId"]));
+    final pending = await _plugin.pendingNotificationRequests();
+    for (var element in pending) {
+      if (element.payload != null) {
+        Map<String, dynamic> payload = json.decode(element.payload!);
+        if (payload['videoID'] == notificationId) {
+          final id = payload["notificationId"];
+          await _plugin.cancel(id is int ? id : int.parse(id.toString()));
+        }
       }
     }
   }
-
-  Future<void> init() async {
-    await _configureLocalTimeZone();
-    await _initializeNotification();
-  }
 }
 
+// バックグラウンド/未起動時の通知タップ
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse notificationResponse) {
-  // ignore: avoid_print
-  print('notification(${notificationResponse.id}) action tapped: '
-      '${notificationResponse.actionId} with'
-      ' payload: ${notificationResponse.payload}');
-  if (notificationResponse.input?.isNotEmpty ?? false) {
-    // ignore: avoid_print
-    print(
-        'notification action tapped with input: ${notificationResponse.input}');
-  }
   final payload = notificationResponse.payload;
-  // 空文字なら何もしない
-  if (payload == null || payload.isEmpty) {
-    return;
-  }
-  // 共通のダイアログ表示ロジックを呼び出す
+  if (payload == null || payload.isEmpty) return;
   showNotificationDialog(payload);
 }
 
+// iOS 10未満用（ほぼ不要だが一応残す）
 void onDidReceiveLocalNotification(
     int id, String? title, String? body, String? payload) {
   didReceiveLocalNotificationStream.add(
@@ -327,14 +256,215 @@ void onDidReceiveLocalNotification(
       payload: payload,
     ),
   );
-  // // 通知レスポンスを解析して必要な情報を抽出
-  // if (payload == null || payload.isEmpty) {
-  //   return;
-  // }
-
-  // // 共通のダイアログ表示ロジックを呼び出す
-  // showNotificationDialog(payload);
 }
+// class pushNotification {
+//   final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin =
+//       FlutterLocalNotificationsPlugin();
+
+//   FlutterLocalNotificationsPlugin get flutterLocalNotificationsPlugin =>
+//       _flutterLocalNotificationsPlugin;
+
+//   Future<void> registerMessage(Map<String, dynamic> data) async {
+//     int notificationID = convertToJapanDayTimeToPushId(data["comparisonDay"]);
+//     String jsonString =
+//         '{"notificationId":"$notificationID","videoID":"${data["videoID"]}","title":"${data["title"]}","thumbnail":"${data["thumbnail"]}","comparisonDay":"${data["comparisonDay"]}"}';
+//     Map<String, dynamic> payloadMap = json.decode(jsonString);
+//     await _flutterLocalNotificationsPlugin.zonedSchedule(
+//       notificationID,
+//       "配信が始まります",
+//       data["title"],
+//       convertToPushTime(data["comparisonDay"]),
+//       NotificationDetails(
+//         android: AndroidNotificationDetails(
+//           data["videoID"],
+//           data["channelTitle"],
+//           importance: Importance.max,
+//           priority: Priority.high,
+//           ongoing: true,
+//           styleInformation:
+//               BigTextStyleInformation(data["title"] + "の配信が始まります"),
+//           icon: 'ic_notification',
+//           additionalFlags: Int32List.fromList([1]),
+//         ),
+//         iOS: const DarwinNotificationDetails(
+//           badgeNumber: 1,
+//         ),
+//       ),
+//       payload: json.encode(payloadMap),
+//       androidAllowWhileIdle: true,
+//       uiLocalNotificationDateInterpretation:
+//           UILocalNotificationDateInterpretation.absoluteTime,
+//       matchDateTimeComponents: DateTimeComponents.time,
+//     );
+//   }
+
+//   void checkForLocalPushNotifications() {
+//     if (!kIsWeb) {
+//       // int executionCount = 0; // 実行回数をカウントする変数
+//       Timer.periodic(const Duration(seconds: 3), (timer) async {
+//         // 実行回数をインクリメント
+//         // executionCount++;
+//         // 通知を取得
+//         var pendingNotifications = await _flutterLocalNotificationsPlugin
+//             .pendingNotificationRequests();
+//         // 現在時刻
+//         var now = DateTime.now();
+//         print("Push Check:$now");
+
+//         // 取得した通知を処理する
+//         for (var notification in pendingNotifications) {
+//           // 通知のペイロードから受信時刻を取得
+//           if (notification.payload != null) {
+//             var payloadMap = json.decode(notification.payload!);
+//             var receivedTime = DateTime.parse(payloadMap['comparisonDay']);
+
+//             // 受信時刻が現在時刻より過去の場合に処理を実行
+//             if (receivedTime.isBefore(now)) {
+//               // 通知に関する処理を実行
+//               showNotificationDialog(notification.payload!);
+//             }
+//           }
+//         }
+//         // // 指定回数に達したらタイマーを停止
+//         // if (executionCount >= 3) {
+//         //   timer.cancel();
+//         //   print("タイマーを停止しました。");
+//         // }
+//       });
+//     }
+//   }
+
+//   Future<void> _configureLocalTimeZone() async {
+//     tz.initializeTimeZones();
+//     // final String? timeZoneName = await FlutterNativeTimezone.getLocalTimezone();
+//     // var timeZone = detroit.timeZone(timeInUtc.millisecondsSinceEpoch);
+//     tz.setLocalLocation(tz.getLocation(tz.local.name));
+//   }
+
+//   Future<void> _initializeNotification() async {
+//     //iOS設定
+//     var initializationSettingsIOS = const DarwinInitializationSettings(
+//         requestAlertPermission: true,
+//         requestBadgePermission: true,
+//         requestSoundPermission: true,
+//         onDidReceiveLocalNotification: onDidReceiveLocalNotification);
+
+//     const AndroidInitializationSettings initializationSettingsAndroid =
+//         AndroidInitializationSettings('ic_notification');
+
+//     InitializationSettings initializationSettings = InitializationSettings(
+//       android: initializationSettingsAndroid,
+//       iOS: initializationSettingsIOS,
+//     );
+
+//     // flutterLocalNotificationsPluginの初期化
+//     await flutterLocalNotificationsPlugin.initialize(
+//       initializationSettings,
+//       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+//       onDidReceiveNotificationResponse:
+//           (NotificationResponse notificationResponse) async {
+//         final payload = notificationResponse.payload;
+//         // 空文字なら何もしない
+//         if (payload == null || payload.isEmpty) {
+//           return;
+//         }
+//         showNotificationDialog(payload);
+//       },
+//     );
+//     await _flutterLocalNotificationsPlugin.initialize(
+//       initializationSettings,
+//       onDidReceiveNotificationResponse:
+//           (NotificationResponse notificationResponse) {
+//         switch (notificationResponse.notificationResponseType) {
+//           case NotificationResponseType.selectedNotification:
+//             // showCustomView(notificationResponse.payload);
+//             print("selectedNotification");
+//             print(notificationResponse.payload);
+//             break;
+//           case NotificationResponseType.selectedNotificationAction:
+//             // showCustomView(notificationResponse.payload);
+//             print("selectedNotificationAction");
+//             print(notificationResponse.payload);
+//             // if (notificationResponse.actionId == navigationActionId) {
+//             // }
+//             break;
+//         }
+//         final payload = notificationResponse.payload;
+//         // 空文字なら何もしない
+//         if (payload == null || payload.isEmpty) {
+//           return;
+//         }
+//         showNotificationDialog(payload);
+//       },
+//       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+//     );
+//   }
+
+//   Future<bool> checkRegistPushFromVideoId(String videoID) async {
+//     final List<PendingNotificationRequest> pendingNotifications =
+//         await _flutterLocalNotificationsPlugin.pendingNotificationRequests();
+//     for (PendingNotificationRequest element in pendingNotifications) {
+//       Map<String, dynamic> payload = json.decode(element.payload!);
+//       if (payload['videoID'] == videoID) {
+//         return true;
+//       }
+//     }
+//     return false;
+//   }
+
+//   Future<void> removeAllNotification() async {
+//     await _flutterLocalNotificationsPlugin.cancelAll();
+//   }
+
+//   Future<void> removeNotification(String notificationId) async {
+//     final List<PendingNotificationRequest> pendingNotifications =
+//         await _flutterLocalNotificationsPlugin.pendingNotificationRequests();
+//     for (PendingNotificationRequest element in pendingNotifications) {
+//       Map<String, dynamic> payload = json.decode(element.payload!);
+//       if (payload['videoID'] == notificationId) {
+//         await _flutterLocalNotificationsPlugin
+//             .cancel(int.parse(payload["notificationId"]));
+//       }
+//     }
+//   }
+
+//   Future<void> init() async {
+//     await _configureLocalTimeZone();
+//     await _initializeNotification();
+//   }
+// }
+
+// @pragma('vm:entry-point')
+// void notificationTapBackground(NotificationResponse notificationResponse) {
+//   // ignore: avoid_print
+//   print('notification(${notificationResponse.id}) action tapped: '
+//       '${notificationResponse.actionId} with'
+//       ' payload: ${notificationResponse.payload}');
+//   if (notificationResponse.input?.isNotEmpty ?? false) {
+//     // ignore: avoid_print
+//     print(
+//         'notification action tapped with input: ${notificationResponse.input}');
+//   }
+//   final payload = notificationResponse.payload;
+//   // 空文字なら何もしない
+//   if (payload == null || payload.isEmpty) {
+//     return;
+//   }
+//   // 共通のダイアログ表示ロジックを呼び出す
+//   showNotificationDialog(payload);
+// }
+
+// void onDidReceiveLocalNotification(
+//     int id, String? title, String? body, String? payload) {
+//   didReceiveLocalNotificationStream.add(
+//     ReceivedNotification(
+//       id: id,
+//       title: title,
+//       body: body,
+//       payload: payload,
+//     ),
+//   );
+// }
 
 List<BuildContext> dialogContexts = [];
 // 共通のダイアログ表示ロジック
@@ -424,8 +554,7 @@ class CustomToast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
-      // IgnorePointerを使用して、トーストをタップイベントを無視するようにする
-      ignoring: true, // トーストがタップイベントを無視するように設定
+      ignoring: true,
       child: Material(
         color: Colors.transparent,
         child: Center(
@@ -434,18 +563,47 @@ class CustomToast extends StatelessWidget {
             bottom: true,
             child: Container(
               width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20.0, vertical: 18.0),
               constraints: BoxConstraints(
                   maxWidth: MediaQuery.of(context).size.width - 48.0),
               decoration: BoxDecoration(
-                color: Colors.grey[800]?.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(12.0),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.grey[800]!.withOpacity(0.85),
+                    Colors.grey[600]!.withOpacity(0.75),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(28.0),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.18),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
-              child: Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.check_circle_rounded,
+                      color: Colors.white, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -487,6 +645,52 @@ class FasterScrollPhysics extends BouncingScrollPhysics {
     // スクロール速度を倍にする
     return super.applyPhysicsToUserOffset(position, offset * 1.3);
   }
+}
+
+Future<void> initializeCategoriesOrder(context) async {
+  final Map<String, dynamic> fetchedCategoriesMap =
+      await GoogleCloudFunctions.getOfficeData();
+
+  List<String> fetchedCategories = fetchedCategoriesMap.keys.toList();
+  if (fetchedCategories.isNotEmpty &&
+      fetchedCategoriesMap[fetchedCategories.first] is List &&
+      (fetchedCategoriesMap[fetchedCategories.first] as List).isNotEmpty &&
+      (fetchedCategoriesMap[fetchedCategories.first][0] as Map<String, dynamic>)
+          .containsKey('order')) {
+    fetchedCategories.sort((a, b) {
+      final aOrder = (fetchedCategoriesMap[a][0]['order'] ?? 9999) as int;
+      final bOrder = (fetchedCategoriesMap[b][0]['order'] ?? 9999) as int;
+      return aOrder.compareTo(bOrder);
+    });
+  }
+
+  // アイコンとVtuberリストを生成
+  Map<String, String> icons = {};
+  Map<String, List<String>> channelIdsByOffice = {};
+  fetchedCategoriesMap.forEach((officeName, vtuberList) {
+    final vtuberWithIcon = vtuberList.firstWhere(
+      (vtuber) => vtuber['officeFlg'] == true,
+      orElse: () => null,
+    );
+    if (vtuberWithIcon != null && vtuberWithIcon['channelThumbnail'] != null) {
+      icons[officeName] = vtuberWithIcon['channelThumbnail'];
+    } else {
+      icons[officeName] = "";
+    }
+    // Vtuber IDリスト
+    channelIdsByOffice[officeName] = vtuberList
+        .where((v) => v['channeID'] != null)
+        .map<String>((v) => v['channeID'].toString())
+        .toList();
+  });
+
+  // Providerにセット
+  Provider.of<SelectedCategorie>(context, listen: false).setOfficeDataFull(
+    officeOrder: fetchedCategories,
+    officeIcons: icons,
+    channelIdsByOffice: channelIdsByOffice,
+    vtuberListByOffice: {}, // 空でOK
+  );
 }
 
 // ===============================
@@ -640,7 +844,6 @@ List<dynamic> filterByOfficeVtuber(Map<String, dynamic> originalMap,
   return filteredList;
 }
 
-
 Map<String, List<dynamic>> filterEventsByOffice(
     List<dynamic> fetchedEvents, List<String> officeData) {
   Map<String, List<dynamic>> filteredEvents = {};
@@ -660,6 +863,7 @@ Map<String, List<dynamic>> filterEventsByOffice(
 
   return filteredEvents;
 }
+
 // ===============================
 // PushRegisterState
 // ===============================
@@ -707,6 +911,10 @@ class AdHelper {
       throw UnsupportedError('Unsupported platform');
     }
   }
+
+  DateTime lastInterstitialShown =
+      DateTime.now().subtract(const Duration(minutes: 2));
+  final Duration _interstitialInterval = Duration(minutes: 2);
 
   static String get interstitialAdUnitId {
     if (Platform.isAndroid) {
@@ -774,72 +982,60 @@ class AdHelper {
           size: 16.0));
 
   // Native Ads
-  List<NativeAd?> nativeAds = [];
+  final int maxNativeAds;
+  final List<NativeAd?> _nativeAds = [];
+  int _currentNativeAdIndex = 0;
+
+  AdHelper({this.maxNativeAds = 3});
+
   void loadNativeAds() {
-    for (int i = 0; i < 1; i++) {
-      if (Platform.isIOS) {
-        NativeAd(
-          adUnitId: AdHelper.nativeAdUnitId,
-          request: const AdRequest(),
-          factoryId: 'listTile',
-          //nativeTemplateStyle: AdHelper.nativeTemplateStyle,
-          listener: NativeAdListener(
-            onAdLoaded: (ad) {
-              nativeAds.add(ad as NativeAd); // リストに広告を追加
-            },
-            onAdFailedToLoad: (ad, err) {
-              nativeAds.add(null);
-            },
-          ),
-        ).load();
-      } else {
-        NativeAd(
-          adUnitId: AdHelper.nativeAdUnitId,
-          request: const AdRequest(),
-          // factoryId: 'googleNativeAdsCard',
-          //factoryId: 'listTile',
-          nativeTemplateStyle: AdHelper.nativeTemplateStyle,
-          listener: NativeAdListener(
-            onAdLoaded: (ad) {
-              nativeAds.add(ad as NativeAd); // リストに広告を追加
-            },
-            onAdFailedToLoad: (ad, err) {
-              nativeAds.add(null);
-            },
-            // Called when a click is recorded for a NativeAd.
-            onAdClicked: (ad) {},
-            // Called when an impression occurs on the ad.
-            onAdImpression: (ad) {},
-            // Called when an ad removes an overlay that covers the screen.
-            onAdClosed: (ad) {},
-            // Called when an ad opens an overlay that covers the screen.
-            onAdOpened: (ad) {},
-            // For iOS only. Called before dismissing a full screen view
-            onAdWillDismissScreen: (ad) {},
-            // Called when an ad receives revenue value.
-            onPaidEvent: (ad, valueMicros, precision, currencyCode) {},
-          ),
-        ).load();
-      }
+    if (_nativeAds.length >= maxNativeAds) return;
+    for (int i = _nativeAds.length; i < maxNativeAds; i++) {
+      final ad = NativeAd(
+        adUnitId: nativeAdUnitId,
+        request: const AdRequest(),
+        factoryId: 'listTile',
+        listener: NativeAdListener(
+          onAdLoaded: (ad) => _nativeAds.add(ad as NativeAd),
+          onAdFailedToLoad: (ad, err) {
+            ad.dispose();
+            _nativeAds.add(null);
+          },
+        ),
+      );
+      ad.load();
     }
   }
 
-  int _currentNativeAdIndex = 0;
-  Widget buildNativeAdWidgetNextAd() {
-    if (nativeAds.isEmpty || nativeAds.length < _currentNativeAdIndex) {
+  Widget buildNextNativeAdWidget() {
+    if (_nativeAds.isEmpty || _currentNativeAdIndex >= _nativeAds.length) {
+      loadNativeAds();
       return const SizedBox();
     }
-    if (bannerAds.length - 1 == _currentNativeAdIndex) {
-      loadNativeAds();
-    }
-    final ad = nativeAds[_currentNativeAdIndex];
-    _currentNativeAdIndex =
-        (_currentNativeAdIndex + 1) % nativeAds.length; // 次の広告のインデックスを更新
+    final ad = _nativeAds[_currentNativeAdIndex];
+    // 使い回し防止: 返却したadはリストからremoveして二重利用を防ぐ
     if (ad != null) {
+      _nativeAds.removeAt(_currentNativeAdIndex);
+      // インデックス調整
+      if (_currentNativeAdIndex >= _nativeAds.length) {
+        _currentNativeAdIndex = 0;
+      }
       return AdWidget(ad: ad);
     } else {
+      _nativeAds.removeAt(_currentNativeAdIndex);
+      if (_currentNativeAdIndex >= _nativeAds.length) {
+        _currentNativeAdIndex = 0;
+      }
       return const SizedBox();
     }
+  }
+
+  void disposeNativeAds() {
+    for (final ad in _nativeAds) {
+      ad?.dispose();
+    }
+    _nativeAds.clear();
+    _currentNativeAdIndex = 0;
   }
 
   // Banner Ads
@@ -917,26 +1113,36 @@ class AdHelper {
 
   int _currentInterstitialAdAdIndex = 0;
   Future<void> interstitialAdShow() async {
-    int count = await _loadInterAdCount();
-    count++;
-    // カウントが5の倍数になったらInterstitialAdを表示
-    if (count % InterstitialADInterval == 0) {
+    if (DateTime.now().difference(lastInterstitialShown) >
+        _interstitialInterval) {
+      // 無限再帰防止: 広告がロードされていない場合はreturnのみ
       if (interstitialAds.isEmpty ||
-          interstitialAds.length < _currentInterstitialAdAdIndex) {
+          _currentInterstitialAdAdIndex >= interstitialAds.length) {
+        loadInterstitialAds();
         return;
       }
-      if (interstitialAds.length - 1 == _currentInterstitialAdAdIndex) {
-        loadInterstitialAds();
+      lastInterstitialShown = DateTime.now();
+      int count = await _loadInterAdCount();
+      count++;
+      // カウントが5の倍数になったらInterstitialAdを表示
+      if (count % InterstitialADInterval == 0) {
+        if (interstitialAds.isEmpty ||
+            interstitialAds.length < _currentInterstitialAdAdIndex) {
+          return;
+        }
+        if (interstitialAds.length - 1 == _currentInterstitialAdAdIndex) {
+          loadInterstitialAds();
+        }
+        final ad = interstitialAds[_currentBannerAdIndex];
+        _currentInterstitialAdAdIndex = (_currentInterstitialAdAdIndex + 1) %
+            interstitialAds.length; // 次の広告のインデックスを更新
+        if (ad != null) {
+          ad.show();
+        }
       }
-      final ad = interstitialAds[_currentBannerAdIndex];
-      _currentInterstitialAdAdIndex = (_currentInterstitialAdAdIndex + 1) %
-          interstitialAds.length; // 次の広告のインデックスを更新
-      if (ad != null) {
-        ad.show();
-      }
+      // カウントを保存
+      _saveTnterCount(count);
     }
-    // カウントを保存
-    _saveTnterCount(count);
   }
 
   Future<int> _loadInterAdCount() async {
@@ -948,6 +1154,79 @@ class AdHelper {
   Future<void> _saveTnterCount(int newCount) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('interAdCount', newCount);
+  }
+
+  /// NativeAdインスタンスを生成して返す（AdWidgetは返さない）
+  NativeAd buildNextNativeAd() {
+    final ad = NativeAd(
+      adUnitId: AdHelper.nativeAdUnitId,
+      request: const AdRequest(),
+      factoryId: 'listTile',
+      listener: NativeAdListener(
+        onAdLoaded: (ad) {},
+        onAdFailedToLoad: (ad, err) {
+          ad.dispose();
+        },
+      ),
+    );
+    ad.load();
+    return ad;
+  }
+}
+
+class NativeAdContainer extends StatefulWidget {
+  final double width;
+  final double height;
+  const NativeAdContainer({required this.width, required this.height, Key? key})
+      : super(key: key);
+
+  @override
+  State<NativeAdContainer> createState() => _NativeAdContainerState();
+}
+
+class _NativeAdContainerState extends State<NativeAdContainer> {
+  NativeAd? _ad;
+  bool _isLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ad = NativeAd(
+      adUnitId: AdHelper.nativeAdUnitId,
+      request: const AdRequest(),
+      factoryId: 'listTile',
+      listener: NativeAdListener(
+        onAdLoaded: (ad) {
+          setState(() {
+            _isLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          setState(() {
+            _isLoaded = false;
+          });
+        },
+      ),
+    )..load();
+  }
+
+  @override
+  void dispose() {
+    _ad?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isLoaded) {
+      return const SizedBox.shrink();
+    }
+    return SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: _ad == null ? const SizedBox.shrink() : AdWidget(ad: _ad!),
+    );
   }
 }
 
@@ -1009,8 +1288,7 @@ Future<Uint8List?> captureScreenAndShare(
               onPressed: () {
                 // キャプチャをシェア
                 Share.shareFiles([imageFile.path],
-                    subject: 'アプリキャプチャをシェアします',
-                    text:url);
+                    subject: 'アプリキャプチャをシェアします', text: url);
                 Navigator.of(context).pop();
               },
               child: const Text('共有する'),

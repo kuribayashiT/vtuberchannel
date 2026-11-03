@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+functions/youtube_token.json
+functions/youtube_token_*.json
+functions/client_secret.json
+node_modules

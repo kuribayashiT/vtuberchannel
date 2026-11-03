@@ -1,6 +1,8 @@
 {
   "rules": {
-    ".read": true,
-    ".write": "auth.uid != null"
+    ".read": false,
+    ".write": false,
+    "officeMapping": { ".read": true },
+    "office": { ".read": true }
   }
 }

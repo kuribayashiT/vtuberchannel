@@ -1,6 +1,7 @@
 // ignore: file_names
 import 'package:flutter/material.dart';
 import 'package:vtuberchannel/sideMenu.dart';
+import '../widgets/cute_loading_widget.dart';
 import '../googleCloudFunctions.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../common.dart';
@@ -11,7 +12,6 @@ class LivePage extends StatefulWidget {
   const LivePage({super.key});
 
   @override
-  // ignore: library_private_types_in_public_api
   _LivePage createState() => _LivePage();
 }
 
@@ -33,7 +33,6 @@ class _LivePage extends State<LivePage> {
     myFavorteState.addListener(_onDataUpdated); // リスナーを登録
     _isMounted = true;
     _liveData = getLiveData();
-
   }
 
   @override
@@ -41,7 +40,6 @@ class _LivePage extends State<LivePage> {
     _isMounted = false;
     myCateState.removeListener(_onDataUpdated); // リスナーを解除
     myFavorteState.removeListener(_onDataUpdated); // リスナーを解除
-
     super.dispose();
   }
 
@@ -50,18 +48,52 @@ class _LivePage extends State<LivePage> {
     _refreshData();
   }
 
+  // ★ここを修正★
   Future<List<dynamic>> getLiveData() async {
     try {
-      final List<dynamic> fetchedCLives =
-          await GoogleCloudFunctions.getLiveData();
-      if (_isMounted) {
-        liveList = filterByOfficeIndices(
-            fetchedCLives,
-            // ignore: use_build_context_synchronously
-            Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories,
-            "video");
-      }
+      // Providerから選択中のchannelId一覧を取得
+      final selectedChannelIds =
+          Provider.of<SelectedCategorie>(context, listen: false)
+              .allSelectedchannelIds;
+
+      // 2つのAPIを並列取得
+      final results = await Future.wait([
+        GoogleCloudFunctions.getLiveData(),
+        GoogleCloudFunctions.getAllVideoData(),
+      ]);
+      final List<dynamic> fetchedCLives = results[0];
+      final List<dynamic> allVideos = results[1];
+
+      // 選択されたchannelIdのみでフィルタ
+      List<Map<String, dynamic>> liveList = fetchedCLives
+          .where((e) => selectedChannelIds.contains(e['channelId']))
+          .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+          .toList();
+
+      final now = DateTime.now();
+      final fiveMinBefore = now.subtract(const Duration(minutes: 5));
+      final fiveMinAfter = now.add(const Duration(minutes: 5));
+
+      // allVideosも同様にchannelIdでフィルタ
+      final List<Map<String, dynamic>> extraLives = allVideos
+          .where((data) => selectedChannelIds.contains(data['channelId']))
+          .where((data) {
+            final comparisonDayJST =
+                DateTime.parse(data['comparisonDay']).toLocal();
+            // 前後5分以内
+            return comparisonDayJST.isAfter(fiveMinBefore) &&
+                comparisonDayJST.isBefore(fiveMinAfter);
+          })
+          .map<Map<String, dynamic>>((data) => {
+                ...Map<String, dynamic>.from(data),
+                'concurrent_viewers': '接続数取得中…'
+              })
+          .where((data) =>
+              !liveList.any((d) => d['videoID'] == data['videoID'])) // 重複除外
+          .toList();
+
+      liveList.addAll(extraLives);
+
       return liveList;
     } catch (e) {
       print('Error fetching data: $e');
@@ -75,7 +107,7 @@ class _LivePage extends State<LivePage> {
       setState(() {
         _liveData = getLiveData(); // データを再取得
       });
-    }else{
+    } else {
       setState(() {
         _liveData = getLiveData(); // データを再取得
       });
@@ -114,7 +146,10 @@ class _LivePage extends State<LivePage> {
           future: _liveData,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return const CuteLoadingWidget(
+                message: '配信中の動画を読み込み中…',
+                color: Colors.blueAccent, // Playタブ青系
+              );
             } else if (snapshot.hasError) {
               return Center(child: Text('Error: ${snapshot.error}'));
             } else {
@@ -122,14 +157,17 @@ class _LivePage extends State<LivePage> {
               if (data.isEmpty) {
                 // 空のリストでもPullToRefreshが動作するようにする
                 return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(), // PullToRefreshが可能
-                  children: const [
-                    Center( // 縦横中央に配置
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 60.0),
-                        child: Text(
-                          '配信中の動画はありません',
-                          style: TextStyle(fontSize: 16), // 必要に応じてスタイルを設定
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    SizedBox(
+                      height:
+                          MediaQuery.of(context).size.height * 0.7, // 画面の7割くらい
+                      child: const Center(
+                        child: CuteEmptyWidget(
+                          message: '配信中の動画はありません',
+                          icon: Icon(Icons.live_tv,
+                              size: 56, color: Colors.blueAccent),
+                          color: Colors.blueAccent,
                         ),
                       ),
                     ),
@@ -169,7 +207,6 @@ class _LivePage extends State<LivePage> {
         ),
       ),
     );
-
   }
 
   Widget buildSquareLayout(Map<String, dynamic> data, double height) {
@@ -249,7 +286,6 @@ class _LivePage extends State<LivePage> {
                                   const Icon(Icons.online_prediction),
                                   const SizedBox(width: 4.0),
                                   Text(
-                                    // ignore: prefer_interpolation_to_compose_strings
                                     "同時接続数:" + data["concurrent_viewers"],
                                     style: const TextStyle(fontSize: 14.0),
                                     maxLines: 1,
@@ -294,7 +330,6 @@ class _LivePage extends State<LivePage> {
                                         .saveFavoriteVideo(data);
                                     showMessage(openContext, "お気に入り動画に登録しました。");
                                   }
-                                  // ボタンの表示を更新するためにsetStateを呼び出す
                                   setState(() {});
                                 },
                               );
@@ -329,11 +364,8 @@ class _LivePage extends State<LivePage> {
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           SizedBox(
-            // ContainerでAspectRatioをラップ
-            width: (MediaQuery.of(context).size.width - 16) / row, // 画面幅に合わせて設定
-            height: ((MediaQuery.of(context).size.width - 16) / row) *
-                9 /
-                16, // 16:9のアスペクト比を保つ
+            width: (MediaQuery.of(context).size.width - 16) / row,
+            height: ((MediaQuery.of(context).size.width - 16) / row) * 9 / 16,
             child: AspectRatio(
               aspectRatio: 16 / 9,
               child: CachedNetworkImage(
@@ -392,7 +424,6 @@ class _LivePage extends State<LivePage> {
                                   const Icon(Icons.online_prediction),
                                   const SizedBox(width: 4.0),
                                   Text(
-                                    // ignore: prefer_interpolation_to_compose_strings
                                     "同時接続数:" + data["concurrent_viewers"],
                                     style: const TextStyle(fontSize: 14.0),
                                     maxLines: 1,
@@ -437,7 +468,6 @@ class _LivePage extends State<LivePage> {
                                         .saveFavoriteVideo(data);
                                     showMessage(openContext, "お気に入り動画に登録しました。");
                                   }
-                                  // ボタンの表示を更新するためにsetStateを呼び出す
                                   setState(() {});
                                 },
                               );

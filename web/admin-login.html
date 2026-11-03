@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VTuber管理システム - ログイン</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .login-container {
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: bold;
+        }
+        input[type="email"], input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        input[type="email"]:focus, input[type="password"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .status {
+            padding: 12px;
+            margin: 15px 0;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .status.success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .status.info {
+            background-color: #cce7ff;
+            border: 1px solid #99d6ff;
+            color: #004085;
+        }
+        .loading {
+            display: none;
+            margin: 10px 0;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .footer {
+            margin-top: 30px;
+            color: #888;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">🎮 VTuber管理システム</div>
+        <div class="subtitle">管理者ログイン</div>
+        
+        <form id="loginForm" onsubmit="login(event)">
+            <div class="form-group">
+                <label for="email">管理者メールアドレス</label>
+                <input type="email" id="email" required placeholder="kurieitajojojo@gmail.com">
+            </div>
+            
+            <div class="form-group">
+                <label for="authCode">認証コード（空欄のまま送信してください）</label>
+                <input type="text" id="authCode" placeholder="管理者の場合は空欄のまま送信">
+            </div>
+            
+            <button type="submit" class="btn" id="loginBtn">
+                ログイン
+            </button>
+        </form>
+        
+        <div class="loading" id="loading">
+            <div class="loading-spinner"></div>
+            認証中...
+        </div>
+        
+        <div id="status"></div>
+        
+        <div class="footer">
+            認証されたユーザーのみがデータを編集できます
+        </div>
+    </div>
+
+    <!-- Firebase SDKs を削除してシンプル化 -->
+    <!-- <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script> -->
+    
+    <script>
+        // Firebase SDKを使わないシンプル認証システム
+        
+        // ページ読み込み時の認証状態確認
+        window.addEventListener('load', () => {
+            console.log('🚀 ログインページ読み込み');
+            const adminUser = sessionStorage.getItem('adminUser');
+            console.log('📄 セッション情報:', adminUser);
+            
+            if (adminUser) {
+                try {
+                    const user = JSON.parse(adminUser);
+                    console.log('👤 パースされたユーザー:', user);
+                    
+                    if (user.isAdmin) {
+                        console.log('✅ 既存ログイン検出、管理画面へ');
+                        showStatus('✅ 既にログイン済みです。管理画面に移動します...', 'success');
+                        setTimeout(() => {
+                            console.log('🔄 管理画面にリダイレクト実行');
+                            window.location.href = 'vtuber-data-manager-new.html';
+                        }, 1500);
+                        return; // 早期リターンを追加
+                    }
+                } catch (e) {
+                    console.log('❌ セッション解析エラー:', e);
+                    sessionStorage.removeItem('adminUser');
+                }
+            }
+            console.log('💻 通常のログインページ表示');
+        });
+
+        async function login(event) {
+            event.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const loginBtn = document.getElementById('loginBtn');
+            const loading = document.getElementById('loading');
+            
+            try {
+                loginBtn.disabled = true;
+                loading.style.display = 'block';
+                showStatus('', '');
+                
+                console.log('🔐 認証開始:', email);
+                
+                // Firebase Functions を直接HTTPリクエストで呼び出し
+                const response = await fetch('https://us-central1-vtuber-335811.cloudfunctions.net/verifyAdminUser', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        data: { email: email }
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                console.log('📞 API レスポンス:', result);
+                
+                if (result && result.result && result.result.success && result.result.isAdmin) {
+                    console.log('✅ 認証成功');
+                    // 認証情報をセッションに保存
+                    const userData = {
+                        email: email,
+                        isAdmin: true,
+                        loginTime: new Date().toISOString()
+                    };
+                    sessionStorage.setItem('adminUser', JSON.stringify(userData));
+                    console.log('💾 セッションに保存:', userData);
+                    
+                    showStatus('✅ ログイン成功！管理画面に移動します...', 'success');
+                    
+                    // 管理画面に移動
+                    setTimeout(() => {
+                        console.log('🔄 管理画面リダイレクト実行');
+                        window.location.href = 'vtuber-data-manager-new.html';
+                    }, 1500);
+                } else {
+                    throw new Error(result?.result?.error || 'Authentication failed');
+                }
+                
+            } catch (error) {
+                console.error('Login error:', error);
+                let errorMessage = '❌ ログインに失敗しました';
+                
+                if (error.message.includes('Not authorized')) {
+                    errorMessage = '❌ 管理者権限がありません';
+                } else {
+                    errorMessage = `❌ ログインエラー: ${error.message}`;
+                }
+                
+                showStatus(errorMessage, 'error');
+            } finally {
+                loginBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            if (message) {
+                statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+            } else {
+                statusDiv.innerHTML = '';
+            }
+        }
+    </script>
+</body>
+</html>

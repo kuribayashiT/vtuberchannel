@@ -1,8 +1,9 @@
+import '../../widgets/cute_loading_widget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:vtuberchannel/googleCloudFunctions.dart';
 import 'package:vtuberchannel/sideMenu.dart'; // SelectedCategorie のプロバイダをインポート
 
 class ThreadListPage extends StatefulWidget {
@@ -12,20 +13,109 @@ class ThreadListPage extends StatefulWidget {
 
 class _ThreadListPageState extends State<ThreadListPage>
     with TickerProviderStateMixin {
+  final DatabaseReference officeMappingRef =
+      FirebaseDatabase.instance.ref('officeMapping');
+  Map<String, dynamic>? cachedOfficeMapping;
+  TabController? _tabController;
   final TextEditingController postController = TextEditingController();
   final FocusNode _postFocusNode = FocusNode();
-  TabController? _tabController; // Nullable に変更
-  List<String> officeList = [];
-  late SelectedCategorie serectedOffice;
-  Map<String, String> officeIcons = {};
-  Map<String, List<String>> officeThreads = {};
-  Map<String, List<Map<String, dynamic>>> threadPosts = {};
-  List<String> selectedThreads = [];
-  final Map<String, List<String>> officeThreadsMap = {};
-  List<Map<String, dynamic>> organizedPosts = [];
-  final Map<int, GlobalKey> postKeys = {};
+  String? selectedThreadId;
   List<String> filteredOfficeList = [];
-  List<Map<String, dynamic>> posts = [];
+  Set<String> initializedOffices = {};
+  List<String> officeList = [];
+  Map<String, String> officeIcons = {};
+  final Map<String, List<String>> officeThreadsMap = {};
+  late SelectedCategorie serectedOffice;
+
+  void _onDataUpdated() => setState(() {});
+
+  Future<void> _fetchOfficeData() async {
+    if (cachedOfficeMapping == null) {
+      final snapshot = await officeMappingRef.get();
+      if (snapshot.exists) {
+        cachedOfficeMapping = Map<String, dynamic>.from(snapshot.value as Map);
+      }
+      if (cachedOfficeMapping != null) {
+        final offices =
+            cachedOfficeMapping!.values.map((v) => v.toString()).toList();
+        setState(() => officeList = offices);
+        await _fetchThreads();
+      }
+    }
+  }
+
+  Future<Map<String, String>> fetchOfficeMapping() async {
+    if (cachedOfficeMapping == null) {
+      final snapshot = await officeMappingRef.get();
+      if (snapshot.exists) {
+        cachedOfficeMapping = Map<String, dynamic>.from(snapshot.value as Map);
+      }
+    }
+    if (cachedOfficeMapping != null) {
+      return cachedOfficeMapping!.map((k, v) => MapEntry(k, v.toString()));
+    }
+    return {};
+  }
+
+  Future<void> _fetchThreads() async {
+    final officeMapping = await fetchOfficeMapping();
+    final threadsSnapshot =
+        await FirebaseFirestore.instance.collection('threads').get();
+    final selectedCategorieProvider =
+        Provider.of<SelectedCategorie>(context, listen: false);
+    final List<String> categoriesOrder = selectedCategorieProvider.officeOrder;
+    for (var office in categoriesOrder) {
+      officeThreadsMap[office] = [];
+      initializedOffices.remove(office);
+    }
+    for (var doc in threadsSnapshot.docs) {
+      final threadId = doc.id;
+      final threadData = doc.data();
+      final firestoreOfficeName = threadData['office'];
+      final officeName =
+          officeMapping[firestoreOfficeName] ?? firestoreOfficeName;
+      if (officeThreadsMap.containsKey(officeName)) {
+        officeThreadsMap[officeName]!.add(threadId);
+      }
+    }
+    for (var office in categoriesOrder) {
+      initializedOffices.add(office);
+    }
+    setState(() {
+      if (categoriesOrder.isNotEmpty) {
+        _tabController?.dispose();
+        _tabController = TabController(
+          length: categoriesOrder.length + 1, // +1 for rules tab
+          vsync: this,
+        )..addListener(() {
+            _updateSelectedThreads(_tabController!.index);
+          });
+        _updateSelectedThreads(0);
+      }
+    });
+  }
+
+  void _updateSelectedThreads(int tabIndex) {
+    final selectedCategorieProvider =
+        Provider.of<SelectedCategorie>(context, listen: false);
+    final List<String> filteredOfficeList =
+        selectedCategorieProvider.selectedOfficeList.isEmpty
+            ? selectedCategorieProvider.officeOrder
+            : selectedCategorieProvider.selectedOfficeList;
+    // 0番目はルールタブ
+    if (tabIndex == 0) {
+      setState(() {
+        selectedThreadId = null;
+      });
+      return;
+    }
+    final office = filteredOfficeList[tabIndex - 1];
+    setState(() {
+      selectedThreadId = officeThreadsMap[office]?.isNotEmpty == true
+          ? officeThreadsMap[office]!.first
+          : null;
+    });
+  }
 
   @override
   void initState() {
@@ -33,180 +123,53 @@ class _ThreadListPageState extends State<ThreadListPage>
     serectedOffice = Provider.of<SelectedCategorie>(context, listen: false);
     serectedOffice.addListener(_onDataUpdated);
     _fetchOfficeData();
-    //タブが変更されたら現在のthreadIdを更新
-
-    // 選択中のオフィスを取得
-    final List<String> selectedOfficeData =
-        Provider.of<SelectedCategorie>(context, listen: false)
-            .selectedCategories
-            .toList();
-    _tabController?.addListener(() {
-      if (_tabController!.indexIsChanging) {
-        final office = selectedOfficeData[_tabController!.index];
-        setState(() {
-          selectedThreads = officeThreads[office] ?? [];
-        });
-      }
-    });
-
-    _postFocusNode.addListener(() {
-      setState(() {}); // フォーカス状態に応じてUIを更新
-    });
-  }
-
-  Future<void> _onDataUpdated() async {
-    serectedOffice = Provider.of<SelectedCategorie>(context, listen: false);
-    await _fetchOfficeData();
   }
 
   @override
   void dispose() {
-    // serectedOffice.removeListener(_onDataUpdated); // リスナーを解除
-    serectedOffice.removeListener(_onDataUpdated); // リスナーを解除
-    super.dispose();
-  }
-
-  Future<void> _fetchOfficeData() async {
-    try {
-      final Map<String, dynamic> fetchedData =
-          await GoogleCloudFunctions.getOfficeData();
-
-      final List<String> offices = [];
-      final Map<String, String> icons = {};
-
-      fetchedData.forEach((officeName, vtuberList) {
-        offices.add(officeName);
-        final vtuberWithIcon = vtuberList.firstWhere(
-          (vtuber) => vtuber['officeFlg'] == true,
-          orElse: () => null,
-        );
-        icons[officeName] = vtuberWithIcon?['channelThumbnail'] ?? "";
-      });
-
-      setState(() {
-        officeList = offices;
-        officeIcons = icons;
-      });
-
-      await _fetchThreads();
-    } catch (e) {
-      print('Error fetching office data: $e');
-    }
-  }
-
-  Stream<List<Map<String, dynamic>>> getThreadPosts(String threadId) {
-    return FirebaseFirestore.instance
-        .collection('posts')
-        .where('threadId', isEqualTo: threadId)
-        .orderBy('createdAt', descending: false) // 昇順で取得
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => doc.data()).toList());
-  }
-
-  Future<void> _fetchThreads() async {
-    try {
-      final threadsSnapshot =
-          await FirebaseFirestore.instance.collection('threads').get();
-
-      for (var office in officeList) {
-        officeThreadsMap[office] = [];
-      }
-
-      for (var doc in threadsSnapshot.docs) {
-        final threadId = doc.id;
-        final threadData = doc.data();
-        final officeName = threadData['office'];
-
-        if (officeThreadsMap.containsKey(officeName)) {
-          officeThreadsMap[officeName]!.add(threadId);
-        }
-
-        await _fetchPostsForThread(threadId);
-      }
-
-      // 選択中のオフィスを取得
-      final List<String> selectedOfficeData =
-          Provider.of<SelectedCategorie>(context, listen: false)
-              .selectedCategories
-              .toList();
-      setState(() {
-        officeThreads = officeThreadsMap;
-
-        // 初回のみタブコントローラーを初期化
-        if (selectedOfficeData.isNotEmpty) {
-          _tabController = TabController(
-            length: selectedOfficeData.length,
-            vsync: this,
-          )..addListener(() {
-              _updateSelectedThreads(_tabController!.index);
-            });
-
-          _updateSelectedThreads(0);
-        }
-      });
-    } catch (e) {
-      print('Error fetching threads: $e');
-    }
-  }
-
-  void _updateSelectedThreads(int tabIndex) {
-    final office = officeList[tabIndex];
-    setState(() {
-      selectedThreads = officeThreads[office] ?? [];
-      //organizedPosts = selectedThreads.expand((threadId) => threadPosts[threadId] ?? []).toList();
-    });
-
-    print("Updated selectedThreads: $selectedThreads");
-    print("Updated organizedPosts: $organizedPosts");
-  }
-
-  void _updateTabController(List<String> filteredList) {
-    // すでに存在している場合は破棄
     _tabController?.dispose();
-
-    // 新しいTabControllerを作成
-    _tabController = TabController(
-      length: filteredList.length,
-      vsync: this,
-    )..addListener(() {
-        if (_tabController!.indexIsChanging) {
-          _updateSelectedThreads(_tabController!.index);
-        }
-      });
+    serectedOffice.removeListener(_onDataUpdated);
+    postController.dispose();
+    _postFocusNode.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // 選択中のオフィスを取得
-    final List<String> selectedOfficeData =
-        Provider.of<SelectedCategorie>(context, listen: true)
-            .selectedCategories
-            .toList();
+    final selectedCategorieProvider =
+        Provider.of<SelectedCategorie>(context, listen: true);
 
-    if (selectedOfficeData.isEmpty) {
-      filteredOfficeList = officeList;
-    } else {
-      filteredOfficeList = officeList
-          .where((office) => selectedOfficeData.contains(office))
-          .toList();
+    // サイドメニューで何も選択されていなければ全オフィス、選択されていればそのオフィスのみ
+    final List<String> selectedOfficeList =
+        selectedCategorieProvider.selectedOfficeList;
+    final List<String> categoriesOrder = selectedCategorieProvider.officeOrder;
+    final Map<String, String> officeIcons =
+        selectedCategorieProvider.officeIcons;
+
+    filteredOfficeList =
+        selectedOfficeList.isEmpty ? categoriesOrder : selectedOfficeList;
+
+    if (categoriesOrder.isEmpty) {
+      return const Scaffold(
+        body: CuteLoadingWidget(
+          message: 'スレッドを読み込み中…',
+          color: Colors.teal,
+        ),
+      );
     }
 
-    // "掲示板ルール" タブを含めた新しいリストを作成
     final List<String> tabList = ["📢 掲示板ルール", ...filteredOfficeList];
 
     if (_tabController == null || _tabController!.length != tabList.length) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        setState(() {
-          _updateTabController(tabList);
-        });
-      });
-    }
-
-    if (filteredOfficeList.isEmpty) {
-      return const Scaffold(
-        body:
-            CircularProgressIndicator(), //Center(child: Text('選択中のオフィスがありません。')),
+      _tabController?.dispose();
+      _tabController = TabController(
+        length: tabList.length,
+        vsync: this,
       );
+      _tabController!.addListener(() {
+        _updateSelectedThreads(_tabController!.index);
+      });
+      _updateSelectedThreads(_tabController!.index);
     }
 
     return DefaultTabController(
@@ -237,9 +200,9 @@ class _ThreadListPageState extends State<ThreadListPage>
                           text: "ルール",
                         );
                       }
-                      final iconUrl = officeIcons[office];
+                      final iconUrl = officeIcons[office] ?? "";
                       return Tab(
-                        icon: iconUrl!.isNotEmpty
+                        icon: iconUrl.isNotEmpty
                             ? ClipOval(
                                 child: Image.network(iconUrl,
                                     width: 24, height: 24))
@@ -251,31 +214,43 @@ class _ThreadListPageState extends State<ThreadListPage>
                 ),
               ];
             },
-            body: Column(
+            body: TabBarView(
+              controller: _tabController,
               children: [
-                // スクロール可能なエリア
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildRulesPage(), // 📢 掲示板ルールのページ
-                      ...filteredOfficeList.map((office) {
-                        return _buildThreadList(office);
-                      }).toList(),
-                    ],
-                  ),
-                ),
-                // 投稿フォーム（ルールページでは表示しない）
-                Padding(
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).viewInsets.bottom + 8,
-                    left: 8,
-                    right: 8,
-                  ),
-                  child: _tabController!.index != 0
-                      ? _buildPostForm()
-                      : SizedBox(),
-                ),
+                _buildRulesPage(),
+                ...filteredOfficeList.map((office) {
+                  final threadIdList = officeThreadsMap[office] ?? [];
+                  final threadId =
+                      threadIdList.isNotEmpty ? threadIdList.first : null;
+                  final isOfficeThreadsReady =
+                      initializedOffices.contains(office);
+
+                  if (!isOfficeThreadsReady) {
+                    return const CuteLoadingWidget(
+                      message: 'スレッドを読み込み中…',
+                      color: Colors.teal,
+                    );
+                  }
+                  return threadId != null
+                      ? _buildPostList(threadId)
+                      : Column(
+                          children: [
+                            const Expanded(
+                                child: Center(child: Text('スレッドがありません'))),
+                            Padding(
+                              padding: EdgeInsets.only(
+                                bottom:
+                                    MediaQuery.of(context).viewInsets.bottom +
+                                        8,
+                                left: 8,
+                                right: 8,
+                              ),
+                              child: _buildPostForm(null,
+                                  isNewThread: true, officeName: office),
+                            ),
+                          ],
+                        );
+                }).toList(),
               ],
             ),
           ),
@@ -301,271 +276,235 @@ class _ThreadListPageState extends State<ThreadListPage>
             .toList());
   }
 
-  Widget _buildThreadList(String tabOfficeName) {
-    // オフィスに紐づくスレッドIDリストを取得
-    final threadIdList = officeThreadsMap[tabOfficeName] ?? [];
-
-    if (threadIdList.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
+  Widget _buildPostList(String threadId) {
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: getPostStream(threadIdList[0]), // スレッドの投稿をリアルタイム取得
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        posts = snapshot.data!;
+        stream: getPostStream(threadId),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData || snapshot.data == null) {
+            return const CuteLoadingWidget(
+              message: '投稿を読み込み中…',
+              color: Colors.teal,
+            );
+          }
+          final posts = snapshot.data!;
+          if (posts.isEmpty) {
+            return Column(
+              children: [
+                const Expanded(child: Center(child: Text('スレッドがありません'))),
+                Padding(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 8,
+                    left: 8,
+                    right: 8,
+                  ),
+                  child: _buildPostForm(threadId, isNewThread: true),
+                ),
+              ],
+            );
+          }
+          Map<int, List<Map<String, dynamic>>> childrenMap = {};
+          List<Map<String, dynamic>> parentPosts = [];
+          for (var post in posts) {
+            int parentNo = post['parentNo'] ?? 0;
+            if (parentNo == 0) {
+              parentPosts.add(post);
+            } else {
+              childrenMap.putIfAbsent(parentNo, () => []).add(post);
+            }
+          }
 
-        if (posts.isEmpty) {
-          return const Center(child: Text("まだ投稿がありません"));
-        }
+          DateTime getLatestDate(Map<String, dynamic> parent) {
+            DateTime latest = _getCreatedAt(parent);
+            void dfs(Map<String, dynamic> node) {
+              int postNo = node['postNo'] as int;
+              if (childrenMap[postNo] != null) {
+                for (var child in childrenMap[postNo]!) {
+                  DateTime childDate = _getCreatedAt(child);
+                  if (childDate.isAfter(latest)) latest = childDate;
+                  dfs(child);
+                }
+              }
+            }
 
-        final groupedPosts = _groupPostsByParent(posts);
+            dfs(parent);
+            return latest;
+          }
 
-        print("groupedPosts :");
-        print(groupedPosts);
-        final parentPosts = groupedPosts.entries
-            .map((entry) => entry.value.first) // グループの先頭が親投稿
-            .toList();
+          parentPosts
+              .sort((a, b) => getLatestDate(b).compareTo(getLatestDate(a)));
 
-        parentPosts.sort((a, b) {
-          final aReplies = groupedPosts[a['postNo']] ?? [];
-          final bReplies = groupedPosts[b['postNo']] ?? [];
-
-          // 親投稿とその返信の中で一番新しい投稿時間を取得
-          final aLatestDate = _getLatestDate(a, aReplies);
-          final bLatestDate = _getLatestDate(b, bReplies);
-
-          return bLatestDate.compareTo(aLatestDate); // 降順ソート
-        });
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16.0),
-          itemCount: parentPosts.length,
-          itemBuilder: (context, index) {
-            final parentPost = parentPosts[index];
-            final postNo = parentPost['postNo'];
-            var replies = [];
-            if (parentPost['postNo'] != groupedPosts[postNo])
-              replies = (groupedPosts[parentPost['postNo']] ?? [])
-                  .skip(1)
-                  .toList(); //groupedPosts[postNo] ?? []; // 親投稿に対する返信
-
-            // すでに `postNo` に対応する GlobalKey がなければ追加
-            postKeys.putIfAbsent(postNo, () => GlobalKey());
-
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 8.0),
-              color: Colors.purple[50],
-              child: Container(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 親投稿を表示
-                    _buildPostItem(parentPost),
-
-                    // 返信がある場合のみ表示
-                    if (replies.isNotEmpty) ...[
-                      const Divider(),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: replies
-                            .map((reply) => Padding(
-                                  padding: const EdgeInsets.only(left: 16.0),
-                                  child: _buildReplyItem(reply),
-                                ))
-                            .toList(),
-                      ),
-                    ],
-                  ],
+          List<Widget> postWidgets = [];
+          for (var parent in parentPosts) {
+            postWidgets.addAll(_buildPostTreeGrouped(parent, childrenMap, 0));
+          }
+          return Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.only(bottom: 80),
+                  children: postWidgets,
                 ),
               ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  DateTime _getLatestDate(
-      Map<String, dynamic> parent, List<Map<String, dynamic>> replies) {
-    final allPosts = [parent, ...replies];
-
-    return allPosts.map((post) {
-      final createdAt = post['createdAt'];
-      if (createdAt is Timestamp) {
-        return createdAt.toDate();
-      }
-      return DateTime(0); // 不正データは最小値にする
-    }).reduce((a, b) => a.isAfter(b) ? a : b); // 最新の日時を選ぶ
-  }
-
-  /// 返信表示用ウィジェット
-  Widget _buildReplyItem(Map<String, dynamic> reply) {
-    final replyNo = reply['postNo'];
-    final timestamp = reply['createdAt'] as Timestamp?;
-    final formattedTime =
-        timestamp != null ? _formatTimestamp(timestamp) : "N/A";
-    return Container(
-      padding: const EdgeInsets.all(8.0),
-      decoration: BoxDecoration(
-        // color: Colors.white,
-        borderRadius: BorderRadius.circular(8.0),
-        // border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween, // 左右に分ける
-            children: [
-              Text(
-                "$replyNo",
-              ),
-              Text(
-                formattedTime,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 8,
+                  left: 8,
+                  right: 8,
+                ),
+                child: _buildPostForm(threadId),
               ),
             ],
-          ),
-          RichText(
-            text: TextSpan(
-              children: _parseContentWithAnchors(reply['content']),
-              style: const TextStyle(color: Colors.black),
-            ),
-          ),
-        ],
-      ),
-    );
+          );
+        });
   }
 
-  Map<int, List<Map<String, dynamic>>> _groupPostsByParent(
-      List<Map<String, dynamic>> posts) {
-    final Map<int, List<Map<String, dynamic>>> groupedPosts = {};
-
-    for (var post in posts) {
-      final postNo = post['postNo'] ?? 0;
-      final parentNo = post['parentNo']; // ← これを replyTo と同義にする
-
-      // 親投稿なら自分自身を自分のグループに追加
-      if (parentNo == null || parentNo == 0) {
-        groupedPosts.putIfAbsent(postNo, () => []).add(post);
-      } else {
-        // 子投稿なら親グループに追加
-        groupedPosts.putIfAbsent(parentNo, () => []).add(post);
+  List<Widget> _buildPostTreeGrouped(
+    Map<String, dynamic> post,
+    Map<int, List<Map<String, dynamic>>> childrenMap,
+    int indentLevel,
+  ) {
+    List<Widget> _buildChildren(Map<String, dynamic> node, int level) {
+      final nodeNo = node['postNo'];
+      final nodeTimestamp = node['createdAt'] as Timestamp?;
+      final nodeFormattedTime =
+          nodeTimestamp != null ? _formatTimestamp(nodeTimestamp) : "N/A";
+      List<Widget> widgets = [
+        Padding(
+          padding: EdgeInsets.only(left: 16.0 * level, top: 4, bottom: 4),
+          child: ListTile(
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("$nodeNo",
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(nodeFormattedTime,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              ],
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                RichText(
+                  text: TextSpan(
+                    children: _parseContentWithAnchors(node['content']),
+                    style: DefaultTextStyle.of(context).style,
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.reply, size: 16),
+                    label: const Text("返信"),
+                    onPressed: () {
+                      setState(() {
+                        postController.text = ">>$nodeNo ";
+                        FocusScope.of(context).requestFocus(FocusNode());
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ];
+      final children = childrenMap[nodeNo] ?? [];
+      children.sort((a, b) => _getCreatedAt(a).compareTo(_getCreatedAt(b)));
+      for (var child in children) {
+        widgets.addAll(_buildChildren(child, level + 1));
       }
+      return widgets;
     }
 
-    // 並び替え
-    groupedPosts.forEach((key, value) {
-      value.sort((a, b) {
-        final aDate = a['createdAt'] as Timestamp?;
-        final bDate = b['createdAt'] as Timestamp?;
-        if (aDate != null && bDate != null) {
-          return aDate.toDate().compareTo(bDate.toDate());
-        }
-        return 0;
-      });
-    });
-
-    final sortedEntries = groupedPosts.entries.toList()
-      ..sort((a, b) {
-        final aLatestDate = _getLatestDate(a.value.first, a.value);
-        final bLatestDate = _getLatestDate(b.value.first, b.value);
-        return bLatestDate.compareTo(aLatestDate);
-      });
-
-    print("sortedEntries :");
-    print(sortedEntries);
-
-    return {for (var entry in sortedEntries) entry.key: entry.value};
-  }
-
-  Map<String, dynamic>? findTopParentBeforeZero(
-      List<Map<String, dynamic>> posts, int parentNo) {
-    List<Map<String, dynamic>> filteredPosts =
-        posts.where((post) => post['postNo'] == parentNo).toList();
-
-    if (filteredPosts.isEmpty) {
-      return null; // 投稿が見つからない場合
-    }
-
-    Map<String, dynamic> currentPost = filteredPosts.first;
-
-    // 次の親投稿が0なら、この投稿が直前の親投稿
-    if (currentPost['parentNo'] == 0) {
-      return null; // parentNo == 0 の場合は直前なし
-    }
-
-    // ここで次の親投稿を取得
-    List<Map<String, dynamic>> nextParentPosts = posts
-        .where((post) => post['postNo'] == currentPost['parentNo'])
-        .toList();
-
-    if (nextParentPosts.isEmpty) {
-      return currentPost; // もし次の親投稿が存在しなければ直前の親投稿として返す
-    }
-
-    Map<String, dynamic> nextParentPost = nextParentPosts.first;
-
-    if (nextParentPost['parentNo'] == 0) {
-      return currentPost; // 次の親投稿が 0 なら現在の投稿が直前の親投稿
-    }
-
-    // さらに親投稿を再帰的に探す
-    return findTopParentBeforeZero(posts, currentPost['parentNo']);
-  }
-
-  /// 投稿表示用ウィジェット
-  Widget _buildPostItem(Map<String, dynamic> post) {
-    final postNo = post['postNo'];
-    final timestamp = post['createdAt'] as Timestamp?;
-    final formattedTime =
-        timestamp != null ? _formatTimestamp(timestamp) : "N/A";
-    return ListTile(
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween, // 左右に分ける
-        children: [
-          Text(
-            "$postNo",
-            style: const TextStyle(fontWeight: FontWeight.bold),
+    return [
+      Card(
+        elevation: 3,
+        margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: Colors.grey.shade400,
+            width: 1.2,
           ),
-          Text(
-            formattedTime,
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        shadowColor: Colors.grey.withOpacity(0.5),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: _buildChildren(post, 0),
           ),
-        ],
+        ),
       ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          RichText(
-            text: TextSpan(
-              children: _parseContentWithAnchors(post['content']),
-              style: DefaultTextStyle.of(context).style,
+    ];
+  }
+
+  DateTime _getCreatedAt(Map<String, dynamic> post) {
+    final createdAt = post['createdAt'];
+    if (createdAt is Timestamp) {
+      return createdAt.toDate();
+    }
+    return DateTime(0);
+  }
+
+  Widget _buildPostForm(String? threadId,
+      {bool isNewThread = false, String? officeName}) {
+    if (_tabController == null) return SizedBox();
+
+    if (isNewThread) {
+      return Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('新規スレッドを作成',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            TextField(
+              focusNode: _postFocusNode,
+              controller: postController,
+              minLines: 2,
+              maxLines: null,
+              maxLength: 80,
+              decoration: const InputDecoration(labelText: "本文"),
             ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              icon: const Icon(Icons.reply, size: 16),
-              label: const Text("返信"),
-              onPressed: () {
-                setState(() {
-                  postController.text = ">>$postNo ";
-                  FocusScope.of(context).requestFocus(FocusNode());
-                });
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.add),
+              label: const Text('スレッド作成'),
+              onPressed: () async {
+                final content = postController.text.trim();
+                if (content.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('本文を入力してください')),
+                  );
+                  return;
+                }
+                String? useThreadId = threadId;
+                if (useThreadId == null && officeName != null) {
+                  final threadIdList = officeThreadsMap[officeName] ?? [];
+                  if (threadIdList.isNotEmpty) {
+                    useThreadId = threadIdList.first;
+                  }
+                }
+                if (useThreadId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('スレッドIDが取得できませんでした')),
+                  );
+                  return;
+                }
+                const userName = "";
+                postController.clear();
+                await addPost(useThreadId, content, userName);
+                await _fetchThreads();
               },
             ),
-          ),
-        ],
-      ),
-    );
-  }
+          ],
+        ),
+      );
+    }
 
-  Widget _buildPostForm() {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Column(
@@ -589,23 +528,7 @@ class _ThreadListPageState extends State<ThreadListPage>
                 tabController: _tabController!,
                 addPost: addPost,
                 icon: const Icon(Icons.send),
-                // onPressed: () async {
-                //   final content = postController.text.trim();
-                //   final userName = "";
-                //   if (content.isNotEmpty) {
-                //     await addPost(
-                //         officeThreadsMap[
-                //                 filteredOfficeList[_tabController!.index - 1]]!
-                //             .first,
-                //         content,
-                //         userName);
-                //     postController.clear();
-                //   } else {
-                //     ScaffoldMessenger.of(context).showSnackBar(
-                //       const SnackBar(content: Text('投稿内容を入力してください')),
-                //     );
-                //   }
-                // },
+                threadId: threadId,
               ),
               if (!_postFocusNode.hasFocus) const SizedBox(width: 48),
               Visibility(
@@ -624,29 +547,6 @@ class _ThreadListPageState extends State<ThreadListPage>
     );
   }
 
-  /// 各スレッドの投稿を取得
-  Future<void> _fetchPostsForThread(String threadId) async {
-    try {
-      final postsSnapshot = await FirebaseFirestore.instance
-          .collection('posts')
-          .where('threadId', isEqualTo: threadId)
-          .orderBy('createdAt', descending: false)
-          .get();
-
-      posts = postsSnapshot.docs.map((doc) => doc.data()).toList();
-
-      setState(() {
-        organizedPosts.addAll(posts);
-        threadPosts[threadId] = posts;
-      });
-    } catch (e) {
-      print('Error fetching posts for thread $threadId: $e');
-    }
-  }
-
-  //==============================
-  // post整理のためのメソッド
-  //==============================
   Future<void> addPost(
       String threadId, String content, String authorName) async {
     FocusScope.of(context).unfocus();
@@ -656,54 +556,19 @@ class _ThreadListPageState extends State<ThreadListPage>
       final postCountSnapshot =
           await postCollection.where('threadId', isEqualTo: threadId).get();
 
-      // 最上位の親を再帰的に探す
-      int findRootParent(int postNo) {
-        final parent = posts.firstWhere(
-          (post) => post['postNo'] == postNo,
-          orElse: () => <String, dynamic>{}, // 型付き空Map
-        );
-
-        if (parent.isEmpty) {
-          return postNo; // 投稿が見つからない場合は自分自身を返す
-        }
-
-        final anchorMatches = RegExp(r'>>(\d+)').allMatches(parent["content"]);
-        if (anchorMatches.isEmpty) {
-          return postNo; // もう親がない → 最上位の親
-        }
-        final match = anchorMatches.first;
-
-        // 再帰的に親をたどる
-        return findRootParent(int.tryParse(match.group(1)!)!);
-      }
-
       int parentNo = 0;
       final anchorMatches = RegExp(r'>>(\d+)').allMatches(content);
       List<int> anchorNumbers = [];
-
-      // 🔍 全アンカーを抽出
       for (final match in anchorMatches) {
         final anchorNo = int.tryParse(match.group(1)!);
         if (anchorNo != null) {
-          final anchorPost = posts.firstWhere(
-            (post) => post['postNo'] == anchorNo,
-            orElse: () => <String, dynamic>{},
-          );
-
-          if (anchorPost.isNotEmpty) {
-            // 🔥 ここで最上位の親をたどってからリストに追加
-            final rootParent = findRootParent(anchorNo);
-            anchorNumbers.add(rootParent);
-          }
+          anchorNumbers.add(anchorNo);
         }
       }
-
       if (anchorNumbers.isNotEmpty) {
-        // 最小番号の親を採用
         parentNo = anchorNumbers.reduce((a, b) => a < b ? a : b);
       }
 
-      // Firestoreに登録
       await newPostRef.set({
         'threadId': threadId,
         'content': content,
@@ -713,15 +578,12 @@ class _ThreadListPageState extends State<ThreadListPage>
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // スレッドの最終更新日時を更新
       await FirebaseFirestore.instance
           .collection('threads')
           .doc(threadId)
           .update({
         'lastUpdated': FieldValue.serverTimestamp(),
       });
-
-      print("Post added successfully");
     } catch (e) {
       print('Error adding post: $e');
     }
@@ -762,9 +624,7 @@ class _ThreadListPageState extends State<ThreadListPage>
               color: Colors.blue, decoration: TextDecoration.underline),
           recognizer: TapGestureRecognizer()
             ..onTap = () {
-              // if (postNo != null) {
-              //   _scrollToPost(postNo);
-              // }
+              // アンカークリック時の処理（必要なら実装）
             },
         ),
       );
@@ -779,7 +639,6 @@ class _ThreadListPageState extends State<ThreadListPage>
     return spans;
   }
 
-  /// 📢 掲示板ルールページのウィジェット
   Widget _buildRulesPage() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -823,7 +682,6 @@ class _ThreadListPageState extends State<ThreadListPage>
     );
   }
 
-  /// 📌 ルール項目のウィジェット
   Widget _buildRuleItem(String title, String description) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -847,8 +705,8 @@ class PostSendButton extends StatefulWidget {
   final List<String> filteredOfficeList;
   final TabController tabController;
   final Future<void> Function(String, String, String) addPost;
-  
   final dynamic icon;
+  final String? threadId;
 
   const PostSendButton({
     super.key,
@@ -858,6 +716,7 @@ class PostSendButton extends StatefulWidget {
     required this.tabController,
     required this.addPost,
     required this.icon,
+    required this.threadId,
   });
 
   @override
@@ -877,7 +736,7 @@ class _PostSendButtonState extends State<PostSendButton> {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.send),
-      onPressed: isSending
+      onPressed: isSending || widget.threadId == null
           ? null
           : () async {
               final content = widget.postController.text.trim();
@@ -887,10 +746,7 @@ class _PostSendButtonState extends State<PostSendButton> {
                   isSending = true;
                 });
                 await widget.addPost(
-                  widget
-                      .officeThreadsMap[widget
-                          .filteredOfficeList[widget.tabController.index - 1]]!
-                      .first,
+                  widget.threadId!,
                   content,
                   userName,
                 );

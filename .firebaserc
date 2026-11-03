@@ -6,9 +6,9 @@
   "targets": {
     "vtuber-335811": {
       "hosting": {
-        "vchannel-com": [
-          "vchannel-com"
-        ]
+      "vtuber-335811": [
+        "vtuber-335811"
+      ]
       }
     }
   },

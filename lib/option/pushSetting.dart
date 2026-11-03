@@ -90,7 +90,7 @@ class _PushSettingDetailState extends State<PushSettingDetail> {
         future: _loadScheduledNotifications(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const CircularProgressIndicator(); // データ取得中の表示
+            return const Center(child: CircularProgressIndicator()); // データ取得中の表示
           } else if (snapshot.hasError) {
             return Text('Error: ${snapshot.error}');
           } else {

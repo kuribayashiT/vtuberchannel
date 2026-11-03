@@ -24,17 +24,20 @@ export async function mergeVideoAndAudio({
   console.log('🛠️ Merging with subtitle path:', subtitleSrtPath);
   // const { execAsync } = require('child_process');
   try {
-    const { stdout, stderr } = await execAsync(`ffmpeg -y -i "${videoPath}" -i "${audioPath}" -filter_complex "[0:a][1:a]amix=inputs=2:duration=shortest" -c:a aac /tmp/mixed-audio.aac`);
+    const { stdout, stderr } = await execAsync(
+      // `ffmpeg -y -i "${videoPath}" -i "${audioPath}" -filter_complex "[0:a][1:a]amix=inputs=2:duration=shortest" -c:a aac /tmp/mixed-audio.aac`);
+      `ffmpeg -y -i "${videoPath}" -i "${audioPath}" -filter_complex "[0:a]volume=0.1[a0];[1:a]volume=2.0[a1];[a0][a1]amix=inputs=2:duration=shortest" -c:a aac /tmp/mixed-audio.aac`
+    );
     console.log('🌀 Audio mix stdout:', stdout);
     console.log('⚠️ Audio mix stderr:', stderr);
-  
+
     if (!existsSync('/tmp/mixed-audio.aac')) {
       throw new Error('❌ /tmp/mixed-audio.aac が作成されていません。音声合成に失敗しています。');
     }
   } catch (e) {
     console.error('❌ Audio mix failed:', e.message);
     throw e;
-  }  
+  }
   if (hasSubtitle) {
     // SRT → ASS 変換（字幕位置とフォント設定）
     console.log('🧪 Converting SRT to ASS:', subtitleSrtPath, '→', assPath);
@@ -62,7 +65,7 @@ export async function mergeVideoAndAudio({
       },
       fontSize: 52,
       fontName: 'Noto Sans CJK JP', // 'sans-serif' だと環境によって再現されない可能性あり
-      audioPath:'/tmp/mixed-audio.aac', // 音声ファイルのパス
+      audioPath: '/tmp/mixed-audio.aac', // 音声ファイルのパス
     });
   }
 
@@ -72,22 +75,22 @@ export async function mergeVideoAndAudio({
 
   // FFmpegコマンド構築（空白・パス対策）
   const ffmpegArgs = [
-  '-y',
-  '-i', videoPath,
-  '-i', '/tmp/mixed-audio.aac',
-  '-map', '0:v:0',
-  '-map', '1:a:0',
-  '-c:v', 'libx264',
-  '-preset', 'slow',
-  '-crf', '18',
-  '-c:a', 'aac',
-  '-b:a', '192k',
-  '-ar', '44100',
-  '-ac', '2',
-  '-af', 'volume=10dB',
-  ...(hasSubtitle ? ['-vf', `subtitles=${assPath}:fontsdir=/usr/share/fonts`] : []),
-  '-shortest',
-  outputPath,
+    '-y',
+    '-i', videoPath,
+    '-i', '/tmp/mixed-audio.aac',
+    '-map', '0:v:0',
+    '-map', '1:a:0',
+    '-c:v', 'libx264',
+    '-preset', 'slow',
+    '-crf', '18',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-ar', '44100',
+    '-ac', '2',
+    '-af', 'volume=10dB',
+    ...(hasSubtitle ? ['-vf', `subtitles=${assPath}:fontsdir=/usr/share/fonts`] : []),
+    '-shortest',
+    outputPath,
   ];
 
   const cmd = ['ffmpeg', ...ffmpegArgs.map(arg => `"${arg}"`)].join(' ');

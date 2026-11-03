@@ -6,8 +6,8 @@ import 'package:vtuberchannel/sideMenu.dart';
 import '../googleCloudFunctions.dart';
 import 'videoDistribution.dart';
 import '../common.dart';
-
-bool showTomorrowFirstView = true;
+import '../widgets/cute_loading_widget.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 class TomorrowLiveScheduleTab extends StatefulWidget
     implements PreferredSizeWidget {
@@ -15,19 +15,97 @@ class TomorrowLiveScheduleTab extends StatefulWidget
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
   @override
-  _TomorrowLiveScheduleTabState createState() =>
+  State<TomorrowLiveScheduleTab> createState() =>
       _TomorrowLiveScheduleTabState();
 }
 
-class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
-  late Future<List<dynamic>> dataForTomorrowday;
-  late Future<List<dynamic>> dataForSeparateTomorrowday;
+class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab>
+    with AutomaticKeepAliveClientMixin {
+  List<dynamic> tomorrowData = [];
+  List<List<dynamic>> tomorrowHourData = List.generate(24, (_) => []);
+  bool isLoading = true;
   bool _isMounted = false;
   late SelectedCategorie myState;
   late FavoriteVideoData myFavorteState;
   late PushRegisterState myPushState;
-  ConstrainedBox adContainer =
-      ConstrainedBox(constraints: const BoxConstraints());
+  bool showFirstView = true;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _isMounted = true;
+    myState = Provider.of<SelectedCategorie>(context, listen: false);
+    myState.addListener(_onDataUpdated);
+    myFavorteState = Provider.of<FavoriteVideoData>(context, listen: false);
+    myFavorteState.addListener(_onDataUpdated);
+    myPushState = Provider.of<PushRegisterState>(context, listen: false);
+    myPushState.addListener(_onDataUpdated);
+
+    if (!kIsWeb) {
+      adHelper.loadBannerAds();
+    }
+    fetchData();
+  }
+
+  // 毎回新しいNativeAdを生成して返す
+  Widget getNextNativeAdWidget({double? width, double? height}) {
+    return NativeAdContainer(
+      width: width ?? double.infinity,
+      height: height ?? 320,
+    );
+  }
+
+  @override
+  void dispose() {
+    _isMounted = false;
+    myState.removeListener(_onDataUpdated);
+    myFavorteState.removeListener(_onDataUpdated);
+    myPushState.removeListener(_onDataUpdated);
+    adHelper.disposeNativeAds();
+    super.dispose();
+  }
+
+  void _onDataUpdated() {
+    fetchData();
+  }
+
+  // ★ここを修正★
+  Future<void> fetchData() async {
+    setState(() => isLoading = true);
+    final allData = await GoogleCloudFunctions.getAllVideoData();
+    if (!_isMounted) return;
+    // Providerから選択中のchannelId一覧を取得
+    final selectedChannelIds = myState.allSelectedchannelIds;
+    // channelIdでフィルタ
+    final videoList = allData
+        .where((data) => selectedChannelIds.contains(data['channelId']))
+        .toList();
+    final now = DateTime.now();
+    final tomorrow = now.add(const Duration(days: 1));
+
+    // 明日のデータ
+    tomorrowData = videoList.where((data) {
+      final comparisonDayJST = DateTime.parse(data['comparisonDay']).toLocal();
+      return comparisonDayJST.year == tomorrow.year &&
+          comparisonDayJST.month == tomorrow.month &&
+          comparisonDayJST.day == tomorrow.day;
+    }).toList();
+
+    // 時間ごと
+    tomorrowHourData = List.generate(24, (_) => []);
+    for (var data in tomorrowData) {
+      final hour = DateTime.parse(data['comparisonDay']).toLocal().hour;
+      tomorrowHourData[hour].add(data);
+    }
+    setState(() => isLoading = false);
+  }
+
+  Future<void> _refreshData() async {
+    await fetchData();
+  }
 
   Widget videoWidget(Map<String, dynamic> data, DateTime now, double height) {
     return VideoWidget(
@@ -39,140 +117,10 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    _isMounted = true;
-    dataForTomorrowday = getAllVideoData();
-    dataForSeparateTomorrowday = getAllVideoSeparateData();
-    myState = Provider.of<SelectedCategorie>(context, listen: false);
-    myState.addListener(_onDataUpdated); // リスナーを登録
-    myFavorteState = Provider.of<FavoriteVideoData>(context, listen: false);
-    myFavorteState.addListener(_onDataUpdated); // リスナーを登録
-    myPushState = Provider.of<PushRegisterState>(context, listen: false);
-    myPushState.addListener(_onDataUpdated); // リスナーを登録
-    if (kIsWeb) {
-    } else {
-      // Admob
-      adHelper.loadNativeAds();
-      adHelper.loadBannerAds();
-    }
-  }
-
-  @override
-  void dispose() {
-    _isMounted = false;
-    myState.removeListener(_onDataUpdated); // リスナーを解除
-    myFavorteState.removeListener(_onDataUpdated); // リスナーを解除
-    myPushState.removeListener(_onDataUpdated); // リスナーを解除
-    super.dispose();
-  }
-
-  void _onDataUpdated() {
-    _loadData();
-  }
-
-  Future<void> _refreshData() async {
-    if (showTomorrowFirstView) {
-      showProgressDialog(context);
-    }
-    await Future.delayed(const Duration(seconds: 2));
-    await _loadData(); // データを再取得
-  }
-
-  Future<void> _loadData() async {
-    try {
-      if (_isMounted) {
-        setState(() {
-          if (showTomorrowFirstView) {
-            dataForSeparateTomorrowday = getAllVideoSeparateData();
-            dataForTomorrowday = getAllVideoData();
-          } else {
-            dataForTomorrowday = getAllVideoData();
-            dataForSeparateTomorrowday = getAllVideoSeparateData();
-          }
-          // if (showTomorrowFirstView) {
-          //   Navigator.pop(openContext);
-          // }
-        });
-      }
-    } catch (e) {
-      print('Error fetching data: $e');
-    }
-  }
-
-  Future<List<dynamic>> getAllVideoData() async {
-    try {
-      // ここでデータを取得する処理を実行
-      final List<dynamic> fetchedCLives =
-          await GoogleCloudFunctions.getAllVideoData();
-      List<dynamic> dataForTomorrow = [];
-      if (_isMounted) {
-        List<dynamic> videoList = filterByOfficeIndices(
-            fetchedCLives,
-            Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories,
-            "video");
-        List.generate(1, (hourIndex) {
-          dataForTomorrow = videoList.where((data) {
-            DateTime comparisonDayUTC = DateTime.parse(data['comparisonDay']);
-            DateTime comparisonDayJST = comparisonDayUTC.toLocal();
-            DateTime now = DateTime.now();
-            // 今日の日付と比較
-            return comparisonDayJST.year == now.year &&
-                comparisonDayJST.month == now.month &&
-                comparisonDayJST.day == now.day + 1;
-          }).toList();
-        });
-      }
-      return dataForTomorrow;
-    } catch (e) {
-      print('Error fetching data: $e');
-      // エラーが発生した場合はエラーメッセージを返す
-      return [];
-    }
-  }
-
-  Future<List<dynamic>> getAllVideoSeparateData() async {
-    try {
-      // ここでデータを取得する処理を実行
-      final List<dynamic> fetchedCLives =
-          await GoogleCloudFunctions.getAllVideoData();
-      List<dynamic> dataForHour = [];
-      if (_isMounted) {
-        List<dynamic> videoList = filterByOfficeIndices(
-            fetchedCLives,
-            Provider.of<SelectedCategorie>(context, listen: false)
-                .selectedCategories,
-            "video");
-        List.generate(24, (hourIndex) async {
-          List<dynamic> dataForToday = videoList.where((data) {
-            DateTime comparisonDayUTC = DateTime.parse(data['comparisonDay']);
-            DateTime comparisonDayJST = comparisonDayUTC.toLocal();
-            DateTime now = DateTime.now();
-            // 明日の日付と比較
-            return comparisonDayJST.year == now.year &&
-                comparisonDayJST.month == now.month &&
-                comparisonDayJST.day == now.day + 1;
-          }).toList();
-          List<dynamic> _dataForHour = dataForToday.where((data) {
-            DateTime comparisonDayUTC = DateTime.parse(data['comparisonDay']);
-            DateTime comparisonDayJST = comparisonDayUTC.toLocal();
-            return comparisonDayJST.hour == hourIndex;
-          }).toList();
-          dataForHour.add(_dataForHour);
-        });
-      }
-      return dataForHour;
-    } catch (e) {
-      print('Error fetching data: $e');
-      // エラーが発生した場合はエラーメッセージを返す
-      return [];
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
+    super.build(context);
     DateTime now = DateTime.now();
+    int row = 1;
     if (MediaQuery.of(context).size.width > 1000) {
       row = 3;
     } else if (MediaQuery.of(context).size.width > 600) {
@@ -180,241 +128,258 @@ class _TomorrowLiveScheduleTabState extends State<TomorrowLiveScheduleTab> {
     }
     double height = calculateItemHeight(context);
     double screenWidth = MediaQuery.of(context).size.width;
-    Widget body;
-    if (!showTomorrowFirstView) {
-      body = RefreshIndicator(
-          onRefresh: _refreshData,
-          child: FutureBuilder<List<dynamic>>(
-            // ここでデータをフェッチするための関数を指定
-            future: dataForTomorrowday,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              } else if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              } else {
-                List dataForTomorrowday = snapshot.data!;
-                if (dataForTomorrowday.isEmpty) {
-                  return const Center(child: Text('配信予定の動画はありません'));
-                } else {
-                  if (row > 1) {
-                    return GridView.builder(
-                      physics: const FasterScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: row, // 列数を設定
-                        crossAxisSpacing: 8.0, // 列間のスペース
-                        mainAxisSpacing: 8.0, // 行間のスペース
-                        //childAspectRatio: 3 / 4, // 要素のアスペクト比
-                      ),
-                      itemCount: dataForTomorrowday.length,
-                      itemBuilder: (context, index) {
-                        // Web用のレイアウトを構築する
-                        return SizedBox(
-                            child: videoWidget(
-                                dataForTomorrowday[index], now, height));
-                      },
-                    );
-                  } else {
-                    return ListView.builder(
-                      itemCount: dataForTomorrowday.length,
-                      physics: const FasterScrollPhysics(),
-                      itemBuilder: (context, index) {
-                        return Column(children: [
-                          SizedBox(
-                              child: videoWidget(
-                                  dataForTomorrowday[index], now, height)),
-                          if (!kIsWeb)
-                            if (index % YoutubeNativeADInterval == 0)
-                              Align(
-                                alignment: Alignment.topCenter,
-                                child: SizedBox(
-                                  width: screenWidth,
-                                  height: height,
-                                  child: adHelper
-                                      .buildNativeAdWidgetNextAd(), //AdHelper().buildNativeAdWidget(),
-                                ),
-                              ),
-                        ]);
-                      },
-                    );
-                  }
-                }
-              }
-            },
-          ));
-    } else {
-      body = DefaultTabController(
-        length: 24,
-        initialIndex: DateTime.now().hour,
-        child: Scaffold(
-          appBar: PreferredSize(
-            preferredSize: const Size.fromHeight(kToolbarHeight),
-            child: CustomAppBar(),
-          ),
-          body: FutureBuilder<List<dynamic>>(
-            // ここでデータをフェッチするための関数を指定
-            future: dataForSeparateTomorrowday,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              } else if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              } else {
-                List dataForHours = snapshot.data!;
 
-                return TabBarView(
-                  physics: kIsWeb ? const NeverScrollableScrollPhysics() : null, // Webの時だけスクロール禁止
-                  children: List.generate(24, (hourIndex) {
-                    List<dynamic> dataForHour = dataForHours[hourIndex];
-                    if (dataForHour.isEmpty) {
-                      return Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            const Center(child: Text("この時間の配信予定はまだありません。")),
-                            if (adHelper.nativeAds.isNotEmpty)
+    if (isLoading) {
+      return const CuteLoadingWidget(
+        message: '配信予定を読み込み中…',
+        color: Colors.blueAccent,
+      );
+    }
+
+    if (!showFirstView) {
+      // 通常リスト表示
+      return SafeArea(
+        top: true,
+        bottom: true,
+        child: Scaffold(
+          floatingActionButton: Row(
+            children: [
+              FloatingActionButton(
+                onPressed: () {
+                  setState(() {
+                    showFirstView = !showFirstView;
+                  });
+                },
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                backgroundColor: Colors.indigo,
+                child: Icon(
+                  showFirstView ? Icons.table_rows : Icons.schedule,
+                  size: 42,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (showFirstView)
+                FloatingActionButton(
+                  onPressed: () {
+                    _refreshData();
+                  },
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  backgroundColor: Colors.indigo,
+                  child: const Icon(
+                    Icons.refresh,
+                    size: 42,
+                    color: Colors.white,
+                  ),
+                ),
+            ],
+          ),
+          floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
+          body: RefreshIndicator(
+            onRefresh: _refreshData,
+            child: tomorrowData.isEmpty
+                ? const Center(
+                    child: CuteEmptyWidget(
+                      message: '配信予定の動画はありません',
+                      icon: Icon(Icons.video_library,
+                          size: 56, color: Colors.blueAccent),
+                      color: Colors.blueAccent,
+                    ),
+                  )
+                : (row > 1
+                    ? GridView.builder(
+                        physics: const FasterScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: row,
+                          crossAxisSpacing: 8.0,
+                          mainAxisSpacing: 8.0,
+                        ),
+                        itemCount: tomorrowData.length,
+                        itemBuilder: (context, index) {
+                          return SizedBox(
+                              child: videoWidget(
+                                  tomorrowData[index], now, height));
+                        },
+                      )
+                    : ListView.builder(
+                        itemCount: tomorrowData.length,
+                        physics: const FasterScrollPhysics(),
+                        itemBuilder: (context, index) {
+                          return Column(children: [
+                            SizedBox(
+                                child: videoWidget(
+                                    tomorrowData[index], now, height)),
+                            if (!kIsWeb && index % YoutubeNativeADInterval == 0)
                               Align(
                                 alignment: Alignment.topCenter,
-                                child: SizedBox(
-                                  width: screenWidth,
-                                  height: height,
-                                  child: adHelper.buildNativeAdWidgetNextAd(),
-                                ),
+                                child: getNextNativeAdWidget(
+                                    width: screenWidth, height: height),
                               ),
                           ]);
-                    } else {
-                      if (row > 1) {
-                        return GridView.builder(
-                          physics: const FasterScrollPhysics(),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: row, // 列数を設定
-                            crossAxisSpacing: 8.0, // 列間のスペース
-                            mainAxisSpacing: 8.0, // 行間のスペース
-                            //childAspectRatio: 3 / 4, // 要素のアスペクト比
-                          ),
-                          itemCount: dataForHour.length,
-                          itemBuilder: (context, index) {
-                            // Web用のレイアウトを構築する
-                            return SizedBox(
-                                child: videoWidget(
-                                    dataForHour[index], now, height));
-                          },
+                        },
+                      )),
+          ),
+        ),
+      );
+    } else {
+      // タブ＋時間別表示
+      return SafeArea(
+        top: true,
+        bottom: true,
+        child: DefaultTabController(
+          length: 24,
+          initialIndex: DateTime.now().hour,
+          child: Scaffold(
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Material(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  elevation: 0,
+                  child: TabBar(
+                    isScrollable:
+                        !kIsWeb || MediaQuery.of(context).size.width < 1000,
+                    tabs: List.generate(24, (index) {
+                      String label = '${index.toString().padLeft(2, '0')}:00';
+                      return Tab(text: label);
+                    }),
+                    labelPadding:
+                        kIsWeb && MediaQuery.of(context).size.width > 1000
+                            ? EdgeInsets.zero
+                            : const EdgeInsets.symmetric(horizontal: 8.0),
+                    indicatorColor: Theme.of(context).colorScheme.secondary,
+                  ),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    physics:
+                        kIsWeb ? const NeverScrollableScrollPhysics() : null,
+                    children: List.generate(24, (hourIndex) {
+                      List<dynamic> dataForHour = tomorrowHourData[hourIndex];
+                      if (dataForHour.isEmpty) {
+                        return Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Center(
+                              child: CuteEmptyWidget(
+                                message: '配信予定の動画はありません',
+                                icon: Icon(Icons.video_library,
+                                    size: 56, color: Colors.blueAccent),
+                                color: Colors.blueAccent,
+                              ),
+                            ),
+                            if (!kIsWeb)
+                              Align(
+                                alignment: Alignment.topCenter,
+                                child: getNextNativeAdWidget(
+                                    width: screenWidth, height: height),
+                              ),
+                          ],
                         );
                       } else {
-                        return ListView.builder(
-                          itemCount: dataForHour.length,
-                          physics: const FasterScrollPhysics(),
-                          itemBuilder: (context, index) {
-                            return Column(children: [
-                              SizedBox(
+                        if (row > 1) {
+                          return GridView.builder(
+                            physics: const FasterScrollPhysics(),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: row,
+                              crossAxisSpacing: 8.0,
+                              mainAxisSpacing: 8.0,
+                            ),
+                            itemCount: dataForHour.length,
+                            itemBuilder: (context, index) {
+                              return SizedBox(
                                   child: videoWidget(
-                                      dataForHour[index], now, height)),
-                              if (index % YoutubeNativeADInterval == 0)
-                                Align(
-                                  alignment: Alignment.topCenter,
-                                  child: SizedBox(
-                                    width: screenWidth,
-                                    height: height,
-                                    child: adHelper
-                                        .buildNativeAdWidgetNextAd(), //AdHelper().buildNativeAdWidget(),
-                                  ),
-                                ),
-                              if (index == dataForHour.length - 1)
-                                if (adHelper.bannerAds.isNotEmpty)
+                                      dataForHour[index], now, height));
+                            },
+                          );
+                        } else {
+                          return ListView.builder(
+                            itemCount: dataForHour.length,
+                            physics: const FasterScrollPhysics(),
+                            itemBuilder: (context, index) {
+                              return Column(children: [
+                                SizedBox(
+                                    child: videoWidget(
+                                        dataForHour[index], now, height)),
+                                if (!kIsWeb &&
+                                    index % YoutubeNativeADInterval == 0)
                                   Align(
                                     alignment: Alignment.topCenter,
-                                    child: SizedBox(
-                                      width: adHelper.bannerAds[0]!.size.width
-                                          .toDouble(),
-                                      height: adHelper.bannerAds[0]!.size.height
-                                          .toDouble(),
-                                      child:
-                                          adHelper.buildBannerAdWidgetNextAd(),
-                                    ),
+                                    child: getNextNativeAdWidget(
+                                        width: 320, height: 320),
                                   ),
-                              if (index == dataForHour.length - 1)
-                                const SizedBox(height: 70)
-                            ]);
-                          },
-                        );
+                                if (!kIsWeb && index == dataForHour.length - 1)
+                                  if (adHelper.bannerAds.isNotEmpty)
+                                    Align(
+                                      alignment: Alignment.topCenter,
+                                      child: SizedBox(
+                                        width: adHelper.bannerAds[0]!.size.width
+                                            .toDouble(),
+                                        height: adHelper
+                                            .bannerAds[0]!.size.height
+                                            .toDouble(),
+                                        child: adHelper
+                                            .buildBannerAdWidgetNextAd(),
+                                      ),
+                                    ),
+                                if (index == dataForHour.length - 1)
+                                  const SizedBox(height: 70)
+                              ]);
+                            },
+                          );
+                        }
                       }
-                    }
-                  }),
-                );
-              }
-            },
+                    }),
+                  ),
+                ),
+              ],
+            ),
+            floatingActionButton: Row(
+              children: [
+                FloatingActionButton(
+                  onPressed: () {
+                    setState(() {
+                      showFirstView = !showFirstView;
+                    });
+                  },
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  backgroundColor: Colors.indigo,
+                  child: Icon(
+                    showFirstView ? Icons.table_rows : Icons.schedule,
+                    size: 42,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (showFirstView)
+                  FloatingActionButton(
+                    onPressed: () {
+                      _refreshData();
+                    },
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    backgroundColor: Colors.indigo,
+                    child: const Icon(
+                      Icons.refresh,
+                      size: 42,
+                      color: Colors.white,
+                    ),
+                  ),
+              ],
+            ),
+            floatingActionButtonLocation:
+                FloatingActionButtonLocation.startFloat,
           ),
         ),
       );
     }
-    return SafeArea(
-      top: true,
-      bottom: true,
-      child: Scaffold(
-        floatingActionButton: Row(
-          children: [
-            FloatingActionButton(
-              onPressed: () {
-                setState(() {
-                  showTomorrowFirstView =
-                      !showTomorrowFirstView; // ボタンが押されるたびにViewを切り替える
-                });
-              },
-              shape: RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(30), // FloatingActionButtonを丸くする
-              ),
-              backgroundColor: Colors.indigo,
-              child: Icon(
-                showTomorrowFirstView
-                    ? Icons.table_rows
-                    : Icons.schedule, // showTodayFirstViewの状態に応じてアイコンを切り替える
-                size: 42, // アイコンのサイズを大きくする
-                color: Colors.white, // アイコンの色
-              ), // ボタンの背景色
-            ), // showTod
-            const SizedBox(width: 8), // ボタン間のスペースを設定
-            if (showTomorrowFirstView)
-              FloatingActionButton(
-                // 左端に配置する追加のフローティングボタン
-                onPressed: () {
-                  setState(() {
-                    _refreshData();
-                  });
-                },
-                shape: RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(30), // FloatingActionButtonを丸くする
-                ),
-                backgroundColor: Colors.indigo,
-                child: const Icon(
-                  Icons.refresh, // showTodayFirstViewの状態に応じてアイコンを切り替える
-                  size: 42, // アイコンのサイズを大きくする
-                  color: Colors.white, // アイコンの色
-                ),
-              ),
-          ],
-        ), //
-        floatingActionButtonLocation:
-            FloatingActionButtonLocation.startFloat, // 左端にフローティングボタンを配置する
-        body: body,
-      ),
-    );
-  }
-}
-
-class CustomAppBar extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return AppBar(
-      bottom: TabBar(
-        isScrollable: !kIsWeb || MediaQuery.of(context).size.width < 1000,
-        tabs: List.generate(24, (index) {
-          String label = '${index.toString().padLeft(2, '0')}:00';
-          return Tab(text: label);
-        }),
-        labelPadding: kIsWeb && MediaQuery.of(context).size.width > 1000 ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 8.0),
-      ),
-    );
   }
 }
