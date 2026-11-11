@@ -1683,7 +1683,9 @@ const { youtubeUpload } = require('./youtubeUpload');
 const fs = require('fs');
 
 //exports.generateBlogVideoFromLatestNews = async (req, res) => {
+// 同名の v2 関数が asia-northeast1 にもあるため、CLI が解決できるようリージョンを明示（従来の既定と同じ us-central1）
 exports.generateBlogVideoFromLatestNews = functions
+  .region('us-central1')
   .runWith({ memory: '2GB', timeoutSeconds: 540 })
   .https.onRequest(async (req, res) => {
     // CORS対応
@@ -2627,7 +2629,7 @@ async function fillBirthdayForSingleVtuber(key, vtuber) {
 
   // 「MM-DD」形式の場合のみ書き込む（unknownや不正な形式は無視）
   if (/^\d{2}-\d{2}$/.test(answer)) {
-    await db.ref(`vtuber/${key}`).update({ birthday: answer });
+    await db.ref(`vtuber/${key}`).update({ birthday: answer, 'profileSource/birthday': 'gpt' });
     console.log(`[Birthday] ${name} の誕生日を ${answer} で登録しました`);
   } else {
     console.log(`[Birthday] ${name} は誕生日不明のためスキップ`);
@@ -2695,11 +2697,16 @@ exports.scheduledFillVtuberBirthdays = functions
   .onRun(async () => {
     const snapshot = await db.ref('vtuber').once('value');
     const vtuberDict = snapshot.val() || {};
+    // Wiki（scheduledFillVtuberProfiles）で調べ済みなのに誕生日が見つからなかったものだけを GPT で補完する。
+    // GPT は記憶に頼るため誤りがあり得るので、Wiki を優先させる
+    const checkedSnap = await db.ref('vtuberProfiles/checked').once('value');
+    const wikiChecked = checkedSnap.val() || {};
 
     const targets = Object.entries(vtuberDict).filter(([, v]) => {
       if (v.officeFlg === true) return false;
       if (v.birthday && v.birthday.trim()) return false;
       if (!v.name) return false;
+      if (!v.channeID || !wikiChecked[v.channeID]) return false; // Wiki 未確認は後回し
       return true;
     });
 
@@ -2864,6 +2871,76 @@ exports.scheduledLiveDataUpdate = functions
   });
 
 // ================================================
+// VTuber 自動発見・自動登録（詳細は vtuberDiscovery.js）
+//  - scheduledVtuberDiscovery: 毎日 0:30 JST に実行し、条件を満たす VTuber・事務所を自動登録
+//    （1:00 JST の誕生日補完より前に走らせ、新規登録分の誕生日も同日中に補完させる）
+//  - previewVtuberDiscovery: 書き込みなしの試走（HTTP GET）。登録予定・保留・スキップ理由を返す
+//  - 停止したいときは RTDB の vtuberDiscovery/config/enabled を false にする
+// ================================================
+const vtuberDiscovery = require('./vtuberDiscovery');
+const vtuberProfiles = require('./vtuberProfiles');
+const DISCOVERY_KEYS = {
+  youtubeApiKey: 'AIzaSyDEJ47ME_oxje2r5XX6hHtMf-F8W2zINSE',
+  holodexApiKey: '6ec899dd-bb7d-4af2-80eb-6635c37356e9',
+};
+
+exports.scheduledVtuberDiscovery = functions
+  .runWith({ timeoutSeconds: 540, memory: '512MB' })
+  .pubsub.schedule('30 0 * * *')
+  .timeZone('Asia/Tokyo')
+  .onRun(async () => {
+    try {
+      await vtuberDiscovery.runVtuberDiscovery({ ...DISCOVERY_KEYS, dryRun: false });
+    } catch (error) {
+      console.error('[Discovery] error:', error);
+    }
+    return null;
+  });
+
+// 誕生日・デビュー日（周年）を Wikidata / Virtual YouTuber Wiki から補完（詳細は vtuberProfiles.js）
+//  0:45 / 6:45 / 12:45 / 18:45 JST。1 回 7 分の時間枠で調べ、残りは次回に回す（調べ済みは 30 日間スキップ）
+exports.scheduledFillVtuberProfiles = functions
+  .runWith({ timeoutSeconds: 540, memory: '512MB' })
+  .pubsub.schedule('45 0,6,12,18 * * *')
+  .timeZone('Asia/Tokyo')
+  .onRun(async () => {
+    try {
+      await vtuberProfiles.runProfileFill({ youtubeApiKey: DISCOVERY_KEYS.youtubeApiKey });
+    } catch (error) {
+      console.error('[Profiles] error:', error);
+    }
+    return null;
+  });
+
+// 書き込みなしの試走（HTTP GET ?limit=20）。見つかる誕生日・デビュー日と出典を返す
+exports.previewVtuberProfiles = functions
+  .runWith({ timeoutSeconds: 300, memory: '512MB' })
+  .https.onRequest(async (request, response) => {
+    if (request.method !== 'GET') { response.status(405).json({ error: 'Use GET' }); return; }
+    const limit = Math.min(Math.max(parseInt(request.query.limit, 10) || 20, 1), 100);
+    try {
+      const result = await vtuberProfiles.runProfileFill({ youtubeApiKey: DISCOVERY_KEYS.youtubeApiKey, dryRun: true, timeBudgetMs: 200000, limit });
+      response.json({ success: true, ...result });
+    } catch (error) {
+      console.error('[Profiles preview] error:', error);
+      response.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+exports.previewVtuberDiscovery = functions
+  .runWith({ timeoutSeconds: 300, memory: '512MB' })
+  .https.onRequest(async (request, response) => {
+    if (request.method !== 'GET') { response.status(405).json({ error: 'Use GET' }); return; }
+    try {
+      const result = await vtuberDiscovery.runVtuberDiscovery({ ...DISCOVERY_KEYS, dryRun: true });
+      response.json({ success: true, ...result });
+    } catch (error) {
+      console.error('[Discovery preview] error:', error);
+      response.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+// ================================================
 // Holodex APIを使って未登録VTuberを発見する
 // ================================================
 exports.discoverVtubers = functions.https.onRequest(async (request, response) => {
@@ -2874,32 +2951,8 @@ exports.discoverVtubers = functions.https.onRequest(async (request, response) =>
 
   const HOLODEX_API_KEY = '6ec899dd-bb7d-4af2-80eb-6635c37356e9';
 
-  // HolodexのorgをFirebaseのofficeKeyに変換するマップ
-  const HOLODEX_ORG_TO_OFFICE_KEY = {
-    'Hololive': 'hololive',
-    'Nijisanji': 'nijisannji',
-    'VSpo': 'vsupo',
-    'Nori Pro': 'noripuro',
-    'Nanashi Inc.': 'nanashiinc',
-    '774inc': 'nanashiinc',
-    'Aogiri Highschool': 'aogirigakuen',
-    'HoloStars': 'holostars',
-    'Kizuna Ai Inc.': 'KizunaAI',
-    'VShojo': 'Vshojo',
-    '.LIVE': 'dotLIVE',
-    'H.Live': 'hlive',
-    'NIJISANJI EN': 'nijisannji',
-    'NIJISANJI KR': 'nijisannji',
-    'NIJISANJI ID': 'nijisannji',
-    'Algorhythm Project': 'algorhythm',
-    'AKA Virtual': 'aka_virtual',
-    'Brave Group': 'brave_group',
-    'HIMEHINA': 'himehina',
-    'Palette Project': 'palette_project',
-    'suzumia': 'suzumia',
-    'Independents': 'personal',
-    'Twitch Independents': 'personal',
-  };
+  // HolodexのorgをFirebaseのofficeKeyに変換するマップ（vtuberDiscovery.js と共通）
+  const HOLODEX_ORG_TO_OFFICE_KEY = vtuberDiscovery.HOLODEX_ORG_TO_OFFICE_KEY;
 
   try {
     const { mode, org, offset: reqOffset } = request.body || request.query;
