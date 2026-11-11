@@ -27,9 +27,14 @@ const chunk = (arr, n) => {
   return out;
 };
 
+// 試行回数。毎晩 1:00 JST ごろは Wikidata が混み maxlag が続くため、Retry-After に従って長めに待つ。
+// 最後の 1 回は maxlag を外して取得する（読み取りのみで負荷が小さいため）
+const MAX_ATTEMPTS = 5;
+
 async function mwGet(endpoint, params, attempt = 0) {
   const url = new URL(endpoint);
-  for (const [k, v] of Object.entries({ format: 'json', formatversion: '2', maxlag: '5', ...params })) {
+  const lastAttempt = attempt >= MAX_ATTEMPTS - 1;
+  for (const [k, v] of Object.entries({ format: 'json', formatversion: '2', ...(lastAttempt ? {} : { maxlag: '5' }), ...params })) {
     url.searchParams.set(k, v);
   }
   await sleep(REQUEST_INTERVAL_MS);
@@ -37,7 +42,10 @@ async function mwGet(endpoint, params, attempt = 0) {
   try {
     res = await fetch(url, { headers: { 'User-Agent': USER_AGENT, 'Api-User-Agent': USER_AGENT } });
   } catch (e) {
-    if (attempt < 3) return mwGet(endpoint, params, attempt + 1);
+    if (!lastAttempt) {
+      await sleep(2000 * (attempt + 1));
+      return mwGet(endpoint, params, attempt + 1);
+    }
     throw e;
   }
   const retryAfter = Number(res.headers.get('retry-after')) || 0;
@@ -50,8 +58,8 @@ async function mwGet(endpoint, params, attempt = 0) {
   }
   // 429 / 5xx / maxlag は待って再試行
   if (res.status === 429 || res.status >= 500 || !body || (body.error && body.error.code === 'maxlag')) {
-    if (attempt < 3) {
-      await sleep(Math.max(retryAfter * 1000, 2000 * (attempt + 1)));
+    if (!lastAttempt) {
+      await sleep(Math.max(retryAfter * 1000, 5000 * (attempt + 1)));
       return mwGet(endpoint, params, attempt + 1);
     }
     throw new Error(`MediaWiki API error: HTTP ${res.status} ${body && body.error ? body.error.code : ''}`.trim());
@@ -121,8 +129,13 @@ function birthdayFromWikidataClaims(claims) {
 /** channelId[] → Map<channelId, { qid, jaTitle, wikidataBirthday }> */
 async function findWikidataByChannelIds(channelIds) {
   const result = new Map();
+  // 通信エラーで照合できなかったチャンネル ID（「見つからず」と区別し、翌日に再照合させる）
+  result.failed = new Set();
   const ids = channelIds.filter((id) => /^UC[0-9A-Za-z_-]{22}$/.test(id));
+  let down = false; // リトライし尽くして失敗したら、残りは問い合わせず翌日に回す（540 秒の制限時間を守るため）
   for (const group of chunk(ids, 20)) {
+   if (down) { for (const id of group) result.failed.add(id); continue; }
+   try {
     const search = await mwGet(WIKIDATA_API, {
       action: 'query',
       list: 'search',
@@ -148,6 +161,11 @@ async function findWikidataByChannelIds(channelIds) {
         }
       }
     }
+   } catch (e) {
+    console.warn(`[Birthday] Wikidata 照合に失敗。残りは翌日に再照合:`, e.message);
+    for (const id of group) result.failed.add(id);
+    down = true;
+   }
   }
   return result;
 }
@@ -158,9 +176,15 @@ async function findWikidataByChannelIds(channelIds) {
  */
 async function fetchJawikiPages(titles) {
   const out = new Map();
+  // 通信エラーで取得できなかったタイトル
+  out.failed = new Set();
   const uniq = [...new Set(titles.filter(Boolean))];
+  let down = false;
   for (const group of chunk(uniq, 20)) {
-    const body = await mwGet(JAWIKI_API, {
+    if (down) { for (const t of group) out.failed.add(t); continue; }
+    let body;
+    try {
+      body = await mwGet(JAWIKI_API, {
       action: 'query',
       prop: 'revisions|pageprops',
       rvprop: 'content',
@@ -168,7 +192,13 @@ async function fetchJawikiPages(titles) {
       ppprop: 'disambiguation',
       redirects: '1',
       titles: group.join('|'),
-    });
+      });
+    } catch (e) {
+      console.warn(`[Birthday] jawiki 記事の取得に失敗。残りは翌日に再照合:`, e.message);
+      for (const t of group) out.failed.add(t);
+      down = true;
+      continue;
+    }
     const q = body.query || {};
     // 要求タイトル → 最終タイトル（正規化・リダイレクトをたどる）
     const finalOf = new Map(group.map((t) => [t, { title: t, sectionRedirect: false }]));
@@ -231,7 +261,15 @@ async function lookupBirthdays(targets) {
   const linkedPages = await fetchJawikiPages(linkedTitles);
   const remaining = [];
   for (const t of targets) {
+    if (byChannel.failed.has(t.channelId)) {
+      results.set(t.key, { found: false, error: true });
+      continue;
+    }
     const wd = byChannel.get(t.channelId);
+    if (wd && wd.jaTitle && linkedPages.failed.has(wd.jaTitle)) {
+      results.set(t.key, { found: false, error: true });
+      continue;
+    }
     if (wd) {
       const page = wd.jaTitle ? linkedPages.get(wd.jaTitle) : null;
       const fromArticle = page && !page.sectionRedirect ? extractBirthdayFromWikitext(page.wikitext) : null;
@@ -252,6 +290,10 @@ async function lookupBirthdays(targets) {
   const titlesOf = new Map(remaining.map((t) => [t.key, titleCandidatesFromName(t.name)]));
   const namedPages = await fetchJawikiPages([...titlesOf.values()].flat());
   for (const t of remaining) {
+    if ((titlesOf.get(t.key) || []).some((title) => namedPages.failed.has(title))) {
+      results.set(t.key, { found: false, error: true });
+      continue;
+    }
     const page = (titlesOf.get(t.key) || [])
       .map((title) => namedPages.get(title))
       .find((p) => p && !p.disambiguation && !p.sectionRedirect && looksLikeVtuberArticle(p.wikitext));

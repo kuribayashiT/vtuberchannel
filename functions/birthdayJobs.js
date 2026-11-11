@@ -226,15 +226,20 @@ module.exports = function createBirthdayJobs({ functions, db, storage, getChanne
     let targets = selectTargets(vtuberSnap.val() || {}, lookupSnap.val() || {});
     if (keys) targets = targets.filter((t) => keys.includes(t.key));
     if (limit > 0) targets = targets.slice(0, limit);
-    if (targets.length === 0) return { targets: 0, applied: 0, lowconfidence: 0, notfound: 0 };
+    if (targets.length === 0) return { targets: 0, applied: 0, lowconfidence: 0, notfound: 0, error: 0 };
 
     console.log(`[Birthday] Wikipedia 照合: ${targets.length}件`);
     const results = await lookupBirthdays(targets);
     const now = Date.now();
     const updates = {};
-    const count = { applied: 0, lowconfidence: 0, notfound: 0 };
+    const count = { applied: 0, lowconfidence: 0, notfound: 0, error: 0 };
     for (const t of targets) {
       const r = results.get(t.key) || { found: false };
+      // 通信エラーで照合できなかったものは記録せず、翌日の対象に残す
+      if (r.error) {
+        count.error++;
+        continue;
+      }
       const base = { name: t.name, channelId: t.channelId, checkedAt: now };
       if (!r.found) {
         updates[`birthdayLookup/${t.key}`] = { ...base, status: 'notfound' };
@@ -256,7 +261,7 @@ module.exports = function createBirthdayJobs({ functions, db, storage, getChanne
     }
     // vtuber の更新は onVtuberWriteForEventList 経由で 10分以内に eventList に反映される
     if (Object.keys(updates).length) await db.ref().update(updates);
-    console.log(`[Birthday] 完了: 反映 ${count.applied} / 低信頼 ${count.lowconfidence} / 見つからず ${count.notfound}`);
+    console.log(`[Birthday] 完了: 反映 ${count.applied} / 低信頼 ${count.lowconfidence} / 見つからず ${count.notfound} / 通信エラーで翌日に再照合 ${count.error}`);
     return { targets: targets.length, ...count };
   }
 
