@@ -9,7 +9,8 @@
 //                    検証でさくらみこ・大空スバル・常闇トワなどが数日〜数か月ずれたため使わない
 //    Virtual YouTuber Wiki (virtualyoutuber.fandom.com) は名前で検索し、記事の channel 欄の
 //    @handle / チャンネル ID が YouTube の customUrl / ID と一致した記事だけ採用する（同名の別人を防ぐ）
-//  どちらでも見つからなかった誕生日は、従来どおり scheduledFillVtuberBirthdays（GPT）が補完する。
+//  誕生日は birthdayJobs.js の scheduledFillVtuberBirthdays（1:00 JST、Wikipedia/Wikidata 照合）も補完する。
+//  どちらも空欄だけを埋めるので併用できる。書き込むと onVtuberWriteForEventList 経由で eventList.json が 10 分以内に作り直される。
 //
 //  書き込む形式（既存データの多数派に合わせる）:
 //    birthday: "MM-DD"（年は入れない。設定上の年齢が架空のことが多いため）

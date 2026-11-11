@@ -74,6 +74,16 @@ const Parser = require('rss-parser');
 const OpenAI = require('openai');
 const storage = admin.storage();
 
+// eventList.json 自動更新 / 誕生日の Wikipedia 補完（詳細は birthdayJobs.js）
+const birthdayJobs = require('./birthdayJobs')({
+  functions,
+  admin,
+  db,
+  storage,
+  getChannelInfoCache: () => allChannelYoutubeApiInfoCache,
+});
+Object.assign(exports, birthdayJobs.exports);
+
 // ...existing code...
 // 既存VTuberデータにYouTube APIキャッシュからthumbnailUrl, name, descriptionを一括追加する管理者用バッチ関数
 exports.addVtuberMetaBatch = functions.https.onRequest(async (req, res) => {
@@ -314,8 +324,9 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
         }
 
         // ================================================
-        // rankingYoutubeRegiData / rankingVideoCountData / eventList / youtubeSubscriberCountTransitionList を生成・保存
+        // rankingYoutubeRegiData / rankingVideoCountData / youtubeSubscriberCountTransitionList を生成・保存
         // (15minCFから移管: 24hに1回で十分なデータ)
+        // eventList は RTDB から生成する共通処理（birthdayJobs.rebuildEventListCore）で更新する
         // ================================================
         try {
           const d_today_utc_24h = new Date();
@@ -329,22 +340,19 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
           const officeMapping24 = mappingSnap24.val() || {};
           const mapOffice24 = (key) => officeMapping24[key] || key || '';
 
-          // vtuberDictのchannelID→officeKey/debut/birthdayマップを作成
+          // vtuberDictのchannelID→officeKeyマップを作成
           const vtuberInfoMap = {};
           for (const k in vtuberDict) {
             if (k === 'updateTime') continue;
             if (vtuberDict[k]?.channeID) {
               vtuberInfoMap[vtuberDict[k].channeID] = {
                 officeKey: vtuberDict[k].office || '',
-                debut: vtuberDict[k].debut || '',
-                birthday: vtuberDict[k].birthday || '',
               };
             }
           }
 
           let rankingYoutubeRegiData24 = [];
           let rankingVideoCountData24 = [];
-          let eventList24 = {};
 
           // youtubeSubscriberCountTransitionListをダウンロード（既存データ継承）
           let youtubeSubscriberCountTransitionList24 = [];
@@ -383,22 +391,6 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
               videoCount: channel.statistics.videoCount,
             });
 
-            // eventList（デビュー日）
-            if (info.debut) {
-              const debutDate = new Date(info.debut);
-              const fd = `${debutDate.getMonth() + 1}/${debutDate.getDate()}`;
-              if (!eventList24[fd]) eventList24[fd] = [];
-              eventList24[fd].push({ eventType: 'createAt', channelId: channeID, channelThumbnail: thumbnail, name: channel.snippet.title, office: officeName, createdAt: info.debut });
-            }
-
-            // eventList（誕生日）
-            if (info.birthday) {
-              const bDate = new Date(info.birthday);
-              const fb = `${bDate.getMonth() + 1}/${bDate.getDate()}`;
-              if (!eventList24[fb]) eventList24[fb] = [];
-              eventList24[fb].push({ eventType: 'birthday', channelId: channeID, channelThumbnail: thumbnail, name: channel.snippet.title, office: officeName, birthday: info.birthday });
-            }
-
             // youtubeSubscriberCountTransitionList更新
             const subscriberCount = channel.statistics.subscriberCount;
             const newEntry = { [todayStr24]: subscriberCount };
@@ -427,10 +419,16 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
           await appendToFile(youtubeSubscriberCountTransitionList24, bucket, 'youtubeSubscriberCountTransitionList');
           await appendToFile(rankingYoutubeRegiData24, bucket, 'rankingYoutubeRegiData');
           await appendToFile(rankingVideoCountData24, bucket, 'rankingVideoCountData');
-          await appendToFile([eventList24], bucket, 'eventList');
-          console.log('[24h CF] rankingYoutubeRegiData/rankingVideoCountData/eventList/youtubeSubscriberCountTransitionList 更新完了');
+          console.log('[24h CF] rankingYoutubeRegiData/rankingVideoCountData/youtubeSubscriberCountTransitionList 更新完了');
         } catch (error) {
           console.error('[24h CF] 追加データ生成/アップロード中にエラー:', error);
+        }
+
+        // eventList: 最新のチャンネル名/サムネイルで1日1回は必ず作り直す（件数ガードあり）
+        try {
+          await birthdayJobs.rebuildEventListCore({ channelInfoList: allChannelYoutubeApiInfo, reason: '24h' });
+        } catch (error) {
+          console.error('[24h CF] eventList 再生成エラー:', error);
         }
       }
     }
@@ -1683,7 +1681,7 @@ const { youtubeUpload } = require('./youtubeUpload');
 const fs = require('fs');
 
 //exports.generateBlogVideoFromLatestNews = async (req, res) => {
-// 同名の v2 関数が asia-northeast1 にもあるため、CLI が解決できるようリージョンを明示（従来の既定と同じ us-central1）
+// 本番には asia-northeast1(v2) にも同名関数があるため、region を明示しないとデプロイ時に解決できない
 exports.generateBlogVideoFromLatestNews = functions
   .region('us-central1')
   .runWith({ memory: '2GB', timeoutSeconds: 540 })
@@ -2579,11 +2577,13 @@ exports.addVtuberData = functions.https.onRequest(async (request, response) => {
     // データベースに追加
     await vtuberRef.child(nextKey.toString()).set(dataToAdd);
 
-    // officeFlgがtrueでなく、birthdayが空の場合は自動補完を試みる
+    // officeFlgがtrueでなく、birthdayが空の場合は Wikipedia で照合（信頼度 high/medium なら自動反映）
     if (!dataToAdd.officeFlg && !dataToAdd.birthday) {
-      fillBirthdayForSingleVtuber(nextKey.toString(), dataToAdd).catch(e =>
-        console.warn('[Birthday] 自動補完エラー:', e.message)
-      );
+      try {
+        await birthdayJobs.fillBirthdayForKey(nextKey.toString());
+      } catch (e) {
+        console.warn('[Birthday] Wikipedia 照合エラー:', e.message);
+      }
     }
 
     response.json({
@@ -2602,128 +2602,7 @@ exports.addVtuberData = functions.https.onRequest(async (request, response) => {
   }
 });
 
-// ================================================
-// 1人分のVTuberの誕生日をGPTで補完
-// ================================================
-async function fillBirthdayForSingleVtuber(key, vtuber) {
-  const name = vtuber.name || '';
-  const office = vtuber.office || '';
-  if (!name) return;
-
-  console.log(`[Birthday] ${name} の誕生日を補完中...`);
-
-  const prompt = `VTuber「${name}」（所属: ${office || '不明'}）の誕生日を教えてください。
-公式に発表されている場合のみ「MM-DD」形式（例: 06-21）で答えてください。
-不明または非公式の場合は「unknown」と答えてください。
-誕生日のみを1行で返してください。余計な説明は不要です。`;
-
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [{ role: 'user', content: prompt }],
-    max_tokens: 20,
-    temperature: 0,
-  });
-
-  const answer = (completion.choices[0]?.message?.content || '').trim();
-  console.log(`[Birthday] ${name} → GPT回答: ${answer}`);
-
-  // 「MM-DD」形式の場合のみ書き込む（unknownや不正な形式は無視）
-  if (/^\d{2}-\d{2}$/.test(answer)) {
-    await db.ref(`vtuber/${key}`).update({ birthday: answer, 'profileSource/birthday': 'gpt' });
-    console.log(`[Birthday] ${name} の誕生日を ${answer} で登録しました`);
-  } else {
-    console.log(`[Birthday] ${name} は誕生日不明のためスキップ`);
-  }
-}
-
-// ================================================
-// 全VTuberの誕生日一括補完
-//  - officeFlg === true はスキップ（事務所アカウント）
-//  - birthday が既に入っているものはスキップ
-//  - 手動実行: HTTP GET /fillVtuberBirthdays
-//  - 自動実行: 毎日 1:00 AM JST
-// ================================================
-exports.fillVtuberBirthdays = functions
-  .runWith({ timeoutSeconds: 540, memory: '512MB' })
-  .https.onRequest(async (request, response) => {
-    response.set('Access-Control-Allow-Origin', '*');
-    if (request.method === 'OPTIONS') { response.status(204).send(''); return; }
-
-    try {
-      const snapshot = await db.ref('vtuber').once('value');
-      const vtuberDict = snapshot.val() || {};
-
-      const targets = Object.entries(vtuberDict).filter(([, v]) => {
-        if (v.officeFlg === true) return false;      // 事務所アカウントは除外
-        if (v.birthday && v.birthday.trim()) return false; // 既に登録済みは除外
-        if (!v.name) return false;
-        return true;
-      });
-
-      console.log(`[Birthday] 対象: ${targets.length}件`);
-
-      let filled = 0;
-      let skipped = 0;
-
-      // API呼びすぎ防止のため逐次処理（200ms間隔）
-      for (const [key, vtuber] of targets) {
-        try {
-          await fillBirthdayForSingleVtuber(key, vtuber);
-          filled++;
-        } catch (e) {
-          console.warn(`[Birthday] ${vtuber.name} エラー:`, e.message);
-          skipped++;
-        }
-        await new Promise(r => setTimeout(r, 200));
-      }
-
-      response.json({
-        success: true,
-        total: targets.length,
-        filled,
-        skipped,
-      });
-    } catch (error) {
-      console.error('[Birthday] 一括補完エラー:', error);
-      response.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-// 毎日 1:00 AM JST (= 16:00 UTC) に自動実行
-exports.scheduledFillVtuberBirthdays = functions
-  .runWith({ timeoutSeconds: 540, memory: '512MB' })
-  .pubsub.schedule('0 16 * * *')
-  .timeZone('UTC')
-  .onRun(async () => {
-    const snapshot = await db.ref('vtuber').once('value');
-    const vtuberDict = snapshot.val() || {};
-    // Wiki（scheduledFillVtuberProfiles）で調べ済みなのに誕生日が見つからなかったものだけを GPT で補完する。
-    // GPT は記憶に頼るため誤りがあり得るので、Wiki を優先させる
-    const checkedSnap = await db.ref('vtuberProfiles/checked').once('value');
-    const wikiChecked = checkedSnap.val() || {};
-
-    const targets = Object.entries(vtuberDict).filter(([, v]) => {
-      if (v.officeFlg === true) return false;
-      if (v.birthday && v.birthday.trim()) return false;
-      if (!v.name) return false;
-      if (!v.channeID || !wikiChecked[v.channeID]) return false; // Wiki 未確認は後回し
-      return true;
-    });
-
-    console.log(`[Birthday Scheduled] 対象: ${targets.length}件`);
-
-    for (const [key, vtuber] of targets) {
-      try {
-        await fillBirthdayForSingleVtuber(key, vtuber);
-      } catch (e) {
-        console.warn(`[Birthday] ${vtuber.name} エラー:`, e.message);
-      }
-      await new Promise(r => setTimeout(r, 200));
-    }
-
-    console.log('[Birthday Scheduled] 完了');
-    return null;
-  });
+// 誕生日の補完は birthdayJobs.js（Wikipedia/Wikidata 照合・定期実行で自動反映）に移行
 
 // ================================================
 // Holodex APIを使ったライブデータ更新
