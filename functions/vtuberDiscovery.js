@@ -348,12 +348,14 @@ async function runVtuberDiscovery({ youtubeApiKey, holodexApiKey, dryRun = false
   const db = admin.database();
   const startedAt = new Date();
 
-  const [configSnap, vtuberSnap, officeMappingSnap, officeSnap, orgMappingSnap] = await Promise.all([
+  const [configSnap, vtuberSnap, officeMappingSnap, officeSnap, orgMappingSnap, excludedSnap] = await Promise.all([
     db.ref('vtuberDiscovery/config').once('value'),
     db.ref('vtuber').once('value'),
     db.ref('officeMapping').once('value'),
     db.ref('office').once('value'),
     db.ref('vtuberDiscovery/orgMapping').once('value'),
+    // 管理画面（/admin）で削除・却下したチャンネル。再登録しない
+    db.ref('vtuberDiscovery/excluded').once('value'),
   ]);
   const config = { ...DEFAULT_CONFIG, ...(configSnap.val() || {}) };
   if (!config.enabled && !dryRun) {
@@ -386,7 +388,9 @@ async function runVtuberDiscovery({ youtubeApiKey, holodexApiKey, dryRun = false
 
   // 1. Holodex から候補を集め、未登録のものだけ YouTube / Wikidata で確認する
   const holodexChannels = await fetchHolodexVtubers(holodexApiKey, config.minSubscribers);
-  const unregistered = holodexChannels.filter(ch => ch.id && !registeredIds.has(ch.id));
+  const excludedIds = new Set(Object.keys(excludedSnap.val() || {}));
+  const excludedCount = holodexChannels.filter(ch => ch.id && !registeredIds.has(ch.id) && excludedIds.has(ch.id)).length;
+  const unregistered = holodexChannels.filter(ch => ch.id && !registeredIds.has(ch.id) && !excludedIds.has(ch.id));
   const ids = unregistered.map(ch => ch.id);
   const [ytMap, wikidataMap] = await Promise.all([
     fetchYoutubeChannels(youtubeApiKey, ids),
@@ -523,6 +527,7 @@ async function runVtuberDiscovery({ youtubeApiKey, holodexApiKey, dryRun = false
     minSubscribers: config.minSubscribers,
     holodexChecked: holodexChannels.length,
     unregistered: unregistered.length,
+    excluded: excludedCount,
     registered,
     newOffices: Object.values(newOffices).filter(o => officeKeysToAdd.has(o.officeKey)),
     pendingCount: pending.length,
