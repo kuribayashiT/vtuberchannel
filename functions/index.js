@@ -2695,7 +2695,10 @@ exports.scheduledLiveDataUpdate = functions
       // 4. GCSのlivevideoList.jsonに書き込み
       const file = bucket.file('livevideoList.json');
       await file.save(JSON.stringify(liveVideos, null, 2), {
-        metadata: { contentType: 'application/json' },
+        metadata: {
+          contentType: 'application/json',
+          cacheControl: 'public, max-age=60',
+        },
         resumable: false,
       });
 
