@@ -1272,6 +1272,11 @@ const jstDateTimeFormatter = new Intl.DateTimeFormat('ja-JP', {
   second: '2-digit',
   hour12: false,
 });
+const jstMonthFormatter = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric',
+  month: '2-digit',
+});
 
 function formatDateToJst(value) {
   if (!value) return '';
@@ -1297,6 +1302,68 @@ function parseNewsDateMs(value) {
     return Date.parse(normalized.replace(' ', 'T') + '+09:00');
   }
   return Date.parse(normalized);
+}
+
+function archiveMonthKeyFromPublishedAt(publishedAt) {
+  const publishedMs = parseNewsDateMs(publishedAt);
+  if (!Number.isFinite(publishedMs)) return null;
+  const parts = jstMonthFormatter.formatToParts(new Date(publishedMs));
+  const get = type => parts.find(p => p.type === type)?.value ?? '';
+  const year = get('year');
+  const month = get('month');
+  if (!year || !month) return null;
+  return `${year}-${month}`;
+}
+
+function sortNewsByPublishedAtDesc(a, b) {
+  return parseNewsDateMs(b.publishedAt) - parseNewsDateMs(a.publishedAt);
+}
+
+async function loadNewsArchiveByMonth(bucket, monthKey) {
+  const file = bucket.file(`news/archive/${monthKey}.json`);
+  try {
+    const [contents] = await file.download();
+    const parsed = JSON.parse(contents.toString());
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    if (error?.code === 404) return [];
+    throw error;
+  }
+}
+
+async function appendNewsArchiveByMonth(bucket, monthKey, freshArticles) {
+  if (!Array.isArray(freshArticles) || freshArticles.length === 0) return;
+  const existing = await loadNewsArchiveByMonth(bucket, monthKey);
+  const mergedByUrl = new Map();
+  for (const article of freshArticles.concat(existing)) {
+    if (!article?.url) continue;
+    if (!mergedByUrl.has(article.url)) {
+      mergedByUrl.set(article.url, article);
+    }
+  }
+  const merged = Array.from(mergedByUrl.values()).sort(sortNewsByPublishedAtDesc);
+  const file = bucket.file(`news/archive/${monthKey}.json`);
+  await file.save(JSON.stringify(merged), {
+    metadata: {
+      contentType: 'application/json',
+      cacheControl: 'public, max-age=3600',
+    },
+    resumable: false,
+  });
+  console.log(`[scheduledNewsUpdate] archive ${monthKey} upload finish: ${merged.length}`);
+}
+
+async function appendNewsArchives(bucket, articles) {
+  const byMonth = new Map();
+  for (const article of articles) {
+    const monthKey = archiveMonthKeyFromPublishedAt(article.publishedAt);
+    if (!monthKey || !article.url) continue;
+    if (!byMonth.has(monthKey)) byMonth.set(monthKey, []);
+    byMonth.get(monthKey).push(article);
+  }
+  for (const [monthKey, monthArticles] of byMonth.entries()) {
+    await appendNewsArchiveByMonth(bucket, monthKey, monthArticles);
+  }
 }
 
 function normalizeSourceName(value) {
@@ -1541,6 +1608,7 @@ exports.scheduledNewsUpdate = functions
         resumable: false,
       });
       console.log('[scheduledNewsUpdate] news.json upload finish:', finalArticles.length);
+      await appendNewsArchives(bucket, finalArticles);
     } catch (error) {
       console.error('[scheduledNewsUpdate][ERROR]', error);
     }
