@@ -1257,6 +1257,7 @@ const openai = new OpenAI({ apiKey: functions.config().openai.key });
 const NEWS_NOISE_HOSTS = ['youtu.be', 'youtube.com', 't.co', 'x.com', 'twitter.com', 'howl.link'];
 const NEWS_NOISE_CHANNELS = new Set(['youtube', 'howl.link']);
 const NEWS_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+const NEWS_CLICKS_RETENTION_DAYS = 7;
 const GNEWS_QUERIES = [
   'ぶいすぽ OR ネオポルテ OR ななしいんく OR 774inc OR .LIVE',
   'VTuber デビュー OR 個人勢VTuber',
@@ -1276,6 +1277,12 @@ const jstMonthFormatter = new Intl.DateTimeFormat('ja-JP', {
   timeZone: 'Asia/Tokyo',
   year: 'numeric',
   month: '2-digit',
+});
+const jstDateFormatter = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
 });
 
 function formatDateToJst(value) {
@@ -1302,6 +1309,36 @@ function parseNewsDateMs(value) {
     return Date.parse(normalized.replace(' ', 'T') + '+09:00');
   }
   return Date.parse(normalized);
+}
+
+function jstDayKeyFromMs(ms) {
+  const parts = jstDateFormatter.formatToParts(new Date(ms));
+  const get = type => parts.find(p => p.type === type)?.value ?? '';
+  const year = get('year');
+  const month = get('month');
+  const day = get('day');
+  if (!year || !month || !day) return null;
+  return `${year}${month}${day}`;
+}
+
+function parseNewsClickDayKey(key) {
+  if (/^\d{8}$/.test(key)) {
+    const y = key.slice(0, 4);
+    const m = key.slice(4, 6);
+    const d = key.slice(6, 8);
+    return Date.parse(`${y}-${m}-${d}T00:00:00+09:00`);
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+    return Date.parse(`${key}T00:00:00+09:00`);
+  }
+  return Number.NaN;
+}
+
+function isJst0630(nowMs) {
+  const date = new Date(nowMs);
+  const parts = jstDateTimeFormatter.formatToParts(date);
+  const get = type => parts.find(p => p.type === type)?.value ?? '';
+  return get('hour') === '06' && get('minute') === '30';
 }
 
 function archiveMonthKeyFromPublishedAt(publishedAt) {
@@ -1363,6 +1400,32 @@ async function appendNewsArchives(bucket, articles) {
   }
   for (const [monthKey, monthArticles] of byMonth.entries()) {
     await appendNewsArchiveByMonth(bucket, monthKey, monthArticles);
+  }
+}
+
+async function cleanupOldNewsClicks(nowMs) {
+  if (!isJst0630(nowMs)) return;
+  const todayKey = jstDayKeyFromMs(nowMs);
+  if (!todayKey) return;
+  const todayMs = parseNewsClickDayKey(todayKey);
+  if (!Number.isFinite(todayMs)) return;
+  const cutoffMs = todayMs - NEWS_CLICKS_RETENTION_DAYS * 86_400_000;
+
+  const snapshot = await db.ref('newsClicks').once('value');
+  const value = snapshot.val();
+  if (!value || typeof value !== 'object') return;
+
+  const deletes = {};
+  for (const key of Object.keys(value)) {
+    const dayMs = parseNewsClickDayKey(key);
+    if (!Number.isFinite(dayMs)) continue;
+    if (dayMs < cutoffMs) {
+      deletes[`newsClicks/${key}`] = null;
+    }
+  }
+  if (Object.keys(deletes).length > 0) {
+    await db.ref().update(deletes);
+    console.log('[scheduledNewsUpdate] newsClicks cleanup:', Object.keys(deletes).length);
   }
 }
 
@@ -1609,6 +1672,7 @@ exports.scheduledNewsUpdate = functions
       });
       console.log('[scheduledNewsUpdate] news.json upload finish:', finalArticles.length);
       await appendNewsArchives(bucket, finalArticles);
+      await cleanupOldNewsClicks(Date.now());
     } catch (error) {
       console.error('[scheduledNewsUpdate][ERROR]', error);
     }
