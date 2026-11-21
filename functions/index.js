@@ -1258,6 +1258,23 @@ const NEWS_NOISE_HOSTS = ['youtu.be', 'youtube.com', 't.co', 'x.com', 'twitter.c
 const NEWS_NOISE_CHANNELS = new Set(['youtube', 'howl.link']);
 const NEWS_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const NEWS_CLICKS_RETENTION_DAYS = 7;
+const NEWS_SOURCE_AUDIT_MARKERS = [
+  'googlesyndication',
+  'adsbygoogle',
+  'doubleclick',
+  'googletagservices',
+  'gnads',
+  'i-mobile',
+  'fluct',
+  'microad',
+  'ad-stir',
+  'taboola',
+  'outbrain',
+  'popin',
+  'logly',
+  'yads',
+  'amazon-adsystem',
+];
 const GNEWS_QUERIES = [
   'ぶいすぽ OR ネオポルテ OR ななしいんく OR 774inc OR .LIVE',
   'VTuber デビュー OR 個人勢VTuber',
@@ -1428,6 +1445,138 @@ async function cleanupOldNewsClicks(nowMs) {
     console.log('[scheduledNewsUpdate] newsClicks cleanup:', Object.keys(deletes).length);
   }
 }
+
+function jstMonthKeyFromMs(ms) {
+  const parts = jstMonthFormatter.formatToParts(new Date(ms));
+  const get = type => parts.find(p => p.type === type)?.value ?? '';
+  const year = get('year');
+  const month = get('month');
+  if (!year || !month) return null;
+  return `${year}-${month}`;
+}
+
+function addMonthsToMonthKey(monthKey, delta) {
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) return monthKey;
+  const year = Number(monthKey.slice(0, 4));
+  const month = Number(monthKey.slice(5, 7));
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function countNeedleInText(text, needle) {
+  if (!needle) return 0;
+  let count = 0;
+  let from = 0;
+  while (from < text.length) {
+    const index = text.indexOf(needle, from);
+    if (index < 0) break;
+    count += 1;
+    from = index + needle.length;
+  }
+  return count;
+}
+
+function countNewsAdSignals(html) {
+  const text = String(html || '').toLowerCase();
+  return NEWS_SOURCE_AUDIT_MARKERS.reduce(
+    (sum, marker) => sum + countNeedleInText(text, marker),
+    0,
+  );
+}
+
+function groupNewsByHost(articles) {
+  const grouped = new Map();
+  for (const article of articles) {
+    const url = article?.url || '';
+    if (!isSafeHttpUrl(url)) continue;
+    const host = getHostname(url);
+    if (!host || host === 'news.google.com') continue;
+    if (!grouped.has(host)) grouped.set(host, []);
+    grouped.get(host).push(article);
+  }
+  return grouped;
+}
+
+async function loadArchiveArticlesForAudit(bucket, nowMs) {
+  const currentMonth = jstMonthKeyFromMs(nowMs);
+  if (!currentMonth) return [];
+  const previousMonth = addMonthsToMonthKey(currentMonth, -1);
+  const [current, previous] = await Promise.all([
+    loadNewsArchiveByMonth(bucket, currentMonth),
+    loadNewsArchiveByMonth(bucket, previousMonth),
+  ]);
+  return current.concat(previous);
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchHtmlForAudit(url) {
+  const response = await axios.get(url, {
+    timeout: 10000,
+    responseType: 'text',
+    headers: {
+      'User-Agent': 'VchannelNewsAuditBot/1.0 (+https://www.vchannel.net)',
+      Accept: 'text/html,application/xhtml+xml',
+    },
+    validateStatus: status => status >= 200 && status < 400,
+    maxRedirects: 5,
+  });
+  return typeof response.data === 'string' ? response.data : '';
+}
+
+exports.scheduledNewsSourceAudit = functions
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .pubsub
+  .schedule('0 4 * * 1')
+  .timeZone('Asia/Tokyo')
+  .onRun(async () => {
+    console.log('[scheduledNewsSourceAudit] start');
+    const bucket = storage.bucket('vtuber-335811.appspot.com');
+    const nowMs = Date.now();
+    try {
+      const articles = await loadArchiveArticlesForAudit(bucket, nowMs);
+      const grouped = groupNewsByHost(articles);
+      const scores = {};
+
+      for (const [host, hostArticles] of grouped.entries()) {
+        if (hostArticles.length < 3) continue;
+        const sampledArticles = [...hostArticles]
+          .sort(sortNewsByPublishedAtDesc)
+          .slice(0, 2);
+        const counts = [];
+        for (const article of sampledArticles) {
+          try {
+            const html = await fetchHtmlForAudit(article.url);
+            counts.push(countNewsAdSignals(html));
+          } catch (error) {
+            console.warn('[scheduledNewsSourceAudit] fetch failed:', host, article.url, error?.message || error);
+          }
+          await wait(1000);
+        }
+        if (counts.length === 0) continue;
+        const total = counts.reduce((sum, count) => sum + count, 0);
+        scores[host] = {
+          adCount: total / counts.length,
+          sampled: counts.length,
+          checkedAt: new Date(nowMs).toISOString(),
+        };
+      }
+
+      await bucket.file('newsSourceScores.json').save(JSON.stringify(scores), {
+        metadata: {
+          contentType: 'application/json',
+          cacheControl: 'public, max-age=3600',
+        },
+        resumable: false,
+      });
+      console.log('[scheduledNewsSourceAudit] finish hosts:', Object.keys(scores).length);
+    } catch (error) {
+      console.error('[scheduledNewsSourceAudit][ERROR]', error);
+      throw error;
+    }
+  });
 
 function normalizeSourceName(value) {
   return (value || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
