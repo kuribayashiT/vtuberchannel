@@ -1254,125 +1254,297 @@ exports.addOffice = functions.https.onRequest(async (req, res) => {
 // RSSフィードのURLを配列で指定
 
 const openai = new OpenAI({ apiKey: functions.config().openai.key });
+const NEWS_NOISE_HOSTS = ['youtu.be', 'youtube.com', 't.co', 'x.com', 'twitter.com', 'howl.link'];
+const NEWS_NOISE_CHANNELS = new Set(['youtube', 'howl.link']);
+const NEWS_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+const GNEWS_QUERIES = [
+  'ぶいすぽ OR ネオポルテ OR ななしいんく OR 774inc OR .LIVE',
+  'VTuber デビュー OR 個人勢VTuber',
+];
+
+const jstDateTimeFormatter = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
+function formatDateToJst(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = jstDateTimeFormatter.formatToParts(date);
+  const get = type => parts.find(p => p.type === type)?.value ?? '';
+  const year = get('year');
+  const month = get('month');
+  const day = get('day');
+  const hour = get('hour');
+  const minute = get('minute');
+  const second = get('second');
+  if (!year || !month || !day || !hour || !minute || !second) return '';
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
+function parseNewsDateMs(value) {
+  if (!value || typeof value !== 'string') return Number.NaN;
+  const normalized = value.trim();
+  if (!normalized) return Number.NaN;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(normalized)) {
+    return Date.parse(normalized.replace(' ', 'T') + '+09:00');
+  }
+  return Date.parse(normalized);
+}
+
+function normalizeSourceName(value) {
+  return (value || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+}
+
+function isSafeHttpUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
+function getHostname(url) {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch (_) {
+    return '';
+  }
+}
+
+function hostMatches(host, target) {
+  return host === target || host.endsWith(`.${target}`);
+}
+
+function isNoiseNewsArticle(article, nowMs) {
+  if (!article || typeof article !== 'object') return true;
+  const title = (article.title || '').trim();
+  if (!title) return true;
+  if (!isSafeHttpUrl(article.url)) return true;
+
+  const host = getHostname(article.url);
+  if (NEWS_NOISE_HOSTS.some(noiseHost => hostMatches(host, noiseHost))) {
+    return true;
+  }
+  if (NEWS_NOISE_CHANNELS.has(normalizeSourceName(article.channel))) {
+    return true;
+  }
+
+  const publishedMs = parseNewsDateMs(article.publishedAt);
+  if (!Number.isFinite(publishedMs)) return true;
+  return nowMs - publishedMs > NEWS_MAX_AGE_MS;
+}
+
+function extractSourceText(source) {
+  if (!source) return '';
+  if (typeof source === 'string') return source.trim();
+  if (typeof source === 'object') {
+    if (typeof source._ === 'string') return source._.trim();
+    if (typeof source['#'] === 'string') return source['#'].trim();
+    if (Array.isArray(source) && source.length > 0) {
+      return extractSourceText(source[0]);
+    }
+  }
+  return '';
+}
+
+function stripTitleSourceSuffix(title, sourceName) {
+  if (!title) return '';
+  if (sourceName && title.endsWith(` - ${sourceName}`)) {
+    return title.slice(0, -(` - ${sourceName}`.length)).trim();
+  }
+  return title.trim();
+}
+
+function dedupeByTitlePreferVideo(articles) {
+  const grouped = {};
+  for (const article of articles) {
+    const key = (article.title || '').trim();
+    if (!key) continue;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(article);
+  }
+
+  const deduped = [];
+  for (const key of Object.keys(grouped)) {
+    const group = grouped[key];
+    const withVideo = group.find(article => article.videoUrl);
+    deduped.push(withVideo || group[0]);
+  }
+  return deduped;
+}
+
+async function fetchSerpApiNews() {
+  const serpApiKey = process.env.SERPAPI_KEY;
+  if (!serpApiKey) {
+    console.warn('[scheduledNewsUpdate][SerpApi] SERPAPI_KEY is missing, skip SerpApi source');
+    return [];
+  }
+
+  const response = await axios.get('https://serpapi.com/search.json', {
+    params: {
+      engine: 'google_news',
+      q: 'Vtuber OR ホロライブ OR にじさんじ',
+      hl: 'ja',
+      gl: 'jp',
+      api_key: serpApiKey,
+    },
+    timeout: 20000,
+  });
+  const newsResults = response.data?.news_results || [];
+  console.log(`[scheduledNewsUpdate][SerpApi] news_results: ${newsResults.length}`);
+  return newsResults.map(item => ({
+    channel: (item.source && typeof item.source === 'object' ? item.source.name : item.source) || '',
+    title: item.title || '',
+    publishedAt: formatDateToJst(item.date || item.date_published || ''),
+    description: item.snippet || '',
+    url: item.link || '',
+    creator: item.author || '',
+    urlToImage: item.thumbnail_small || '',
+    sourceName: '',
+    sourceUrl: item.link || '',
+    origin: 'serpapi',
+  }));
+}
+
+async function fetchHololiveRssNews() {
+  const parser = new Parser();
+  const feed = await parser.parseURL('https://hololivepro.com/news/feed/');
+  const items = Array.isArray(feed?.items) ? feed.items : [];
+  console.log(`[scheduledNewsUpdate][hololive] rss items: ${items.length}`);
+  return items.map(item => {
+    const link = item.link || '';
+    return {
+      channel: 'ホロライブ公式',
+      title: item.title || '',
+      publishedAt: formatDateToJst(item.pubDate || item.isoDate || ''),
+      description: item.contentSnippet || item.content || '',
+      url: link,
+      creator: item.creator || '',
+      urlToImage: '',
+      sourceName: '',
+      sourceUrl: link,
+      origin: 'hololive',
+    };
+  });
+}
+
+async function fetchGoogleNewsRss() {
+  const parser = new Parser({
+    customFields: {
+      item: ['source'],
+    },
+  });
+
+  const all = [];
+  for (const query of GNEWS_QUERIES) {
+    const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=ja&gl=JP&ceid=JP:ja`;
+    const feed = await parser.parseURL(url);
+    const items = Array.isArray(feed?.items) ? feed.items : [];
+    console.log(`[scheduledNewsUpdate][gnews] query="${query}" items: ${items.length}`);
+    for (const item of items) {
+      const sourceText = extractSourceText(item.source);
+      const title = stripTitleSourceSuffix(item.title || '', sourceText);
+      const link = item.link || '';
+      all.push({
+        channel: sourceText,
+        title,
+        publishedAt: formatDateToJst(item.pubDate || item.isoDate || ''),
+        description: item.contentSnippet || item.content || '',
+        url: link,
+        creator: item.creator || '',
+        urlToImage: '',
+        sourceName: '',
+        sourceUrl: link,
+        origin: 'gnews',
+      });
+    }
+  }
+  return all;
+}
+
 exports.scheduledNewsUpdate = functions
-  .runWith({ timeoutSeconds: 300, memory: '1GB' })
+  .runWith({ timeoutSeconds: 300, memory: '1GB', secrets: ['SERPAPI_KEY'] })
   .pubsub
   .schedule('30 6,8,11,12,14,17,20,23 * * *') // ← 指定時刻で毎日実行
   .timeZone('Asia/Tokyo')
   .onRun(async (context) => {
-    console.log('[scheduledNewsUpdate][SerpApi] start');
-    const serpApiUrl = 'https://serpapi.com/search.json?engine=google_news&q=Vtuber+OR+ホロライブ+OR+にじさんじ&hl=ja&gl=jp&api_key=a3a91148d53c22e83d8fdf3023684b952c802d9a669b40e4b44f4c2885824865';
+    console.log('[scheduledNewsUpdate] start');
     let allArticles = [];
-    try {
-      // SerpApiからニュース取得
-      const serpRes = await axios.get(serpApiUrl);
-      const newsResults = serpRes.data.news_results || [];
-      console.log(`[scheduledNewsUpdate][SerpApi] news_results: ${newsResults.length}`);
-      allArticles = newsResults.map(item => ({
-        channel: (item.source && typeof item.source === 'object' ? item.source.name : item.source) || '',
-        title: item.title,
-        publishedAt: formatDateSerpApi(item.date || item.date_published || ''),
-        description: item.snippet || '',
-        url: item.link,
-        creator: item.author || '',
-        urlToImage: item.thumbnail_small || '',
-        sourceName: '',
-        // sourceName: item.source || '',
-        sourceUrl: item.link || '',
-      }));
-      allArticles.forEach((a, i) => {
-        if (i < 3) console.log(`[scheduledNewsUpdate][SerpApi] sample article[${i}]:`, a.title, a.publishedAt);
-      });
-      allArticles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
 
-      // ★★ videoUrlMap.json 参照による videoUrl 付与処理 ★★
+    try {
+      allArticles = allArticles.concat(await fetchSerpApiNews());
+    } catch (error) {
+      console.error('[scheduledNewsUpdate][SerpApi][ERROR]', error);
+    }
+
+    try {
+      allArticles = allArticles.concat(await fetchHololiveRssNews());
+    } catch (error) {
+      console.error('[scheduledNewsUpdate][hololive][ERROR]', error);
+    }
+
+    try {
+      allArticles = allArticles.concat(await fetchGoogleNewsRss());
+    } catch (error) {
+      console.error('[scheduledNewsUpdate][gnews][ERROR]', error);
+    }
+
+    try {
       let videoUrlMap = {};
       try {
         const videoUrlMapFile = storage.bucket('vtuber-335811.appspot.com').file('videoUrlMap.json');
         const [contents] = await videoUrlMapFile.download();
         videoUrlMap = JSON.parse(contents.toString());
-        console.log('[scheduledNewsUpdate][SerpApi] videoUrlMap.json loaded:', Object.keys(videoUrlMap).length);
+        console.log('[scheduledNewsUpdate] videoUrlMap loaded:', Object.keys(videoUrlMap).length);
       } catch (err) {
-        console.log('[scheduledNewsUpdate][SerpApi] videoUrlMap.json not found or empty, skip merge');
-        videoUrlMap = {};
+        console.log('[scheduledNewsUpdate] videoUrlMap.json not found or empty, skip merge');
       }
+
       allArticles.forEach(article => {
-        if (videoUrlMap[article.url]) {
+        if (article.url && videoUrlMap[article.url]) {
           article.videoUrl = videoUrlMap[article.url];
         }
       });
-      // ★★ ここまで videoUrlMap.json 参照による videoUrl 付与処理 ★★
 
-      // === タイトル重複除去（videoUrl優先） ===
-      // 1. タイトル完全一致でグループ化
-      console.log('[scheduledNewsUpdate][SerpApi] タイトル完全一致でグループ化');
-      const grouped = {};
-      for (const article of allArticles) {
-        const key = article.title.trim();
-        if (!grouped[key]) grouped[key] = [];
-        grouped[key].push(article);
-      }
-      // 2. videoUrl付き優先で1件だけ残す
-      console.log('[scheduledNewsUpdate][SerpApi] videoUrl付き優先で1件だけ残す');
-      let dedupedArticles = [];
-      for (const key in grouped) {
-        const group = grouped[key];
-        const withVideo = group.filter(a => a.videoUrl);
-        if (withVideo.length > 0) {
-          dedupedArticles.push(withVideo[0]);
-        } else {
-          dedupedArticles.push(group[0]);
-        }
-      }
+      const titleDeduped = dedupeByTitlePreferVideo(allArticles);
+      const nowMs = Date.now();
+      const sorted = titleDeduped
+        .filter(article => !isNoiseNewsArticle(article, nowMs))
+        .sort((a, b) => parseNewsDateMs(b.publishedAt) - parseNewsDateMs(a.publishedAt));
 
-      // === タイトルが微妙に違うもの同士の重複をOpenAIで判定 ===
-      // 3. AIで「同じニュースか？」を判定し、同じなら1つだけ残す
-      console.log('[scheduledNewsUpdate][SerpApi] AIで「同じニュースか？」を判定し、同じなら1つだけ残す');
-      // 4. 2重ループで比較し、同じと判定されたものは1つだけ残す
+      const urlSet = new Set();
       const finalArticles = [];
-      console.log('[scheduledNewsUpdate][SerpApi] 2重ループで比較し、同じと判定されたものは1つだけ残す');
-      for (let i = 0; i < dedupedArticles.length; i++) {
-        if (i % 10 === 0) console.log(`[scheduledNewsUpdate][SerpApi] dedup loop i=${i}/${dedupedArticles.length}`);
-        // if (dedupedArticles.length > 20) break;
-        let isDuplicate = false;
-        for (let j = 0; j < finalArticles.length; j++) {
-          // OpenAI APIコスト削減のため、タイトル長が短い・記号だけ違う場合はスキップ
-          if (dedupedArticles[i].title === finalArticles[j].title) {
-            isDuplicate = true;
-            break;
-          }
-        }
-        if (!isDuplicate) finalArticles.push(dedupedArticles[i]);
+      for (const article of sorted) {
+        if (!article.url || urlSet.has(article.url)) continue;
+        urlSet.add(article.url);
+        finalArticles.push(article);
+        if (finalArticles.length >= 150) break;
       }
 
-      console.log('[scheduledNewsUpdate][SerpApi] finalArticles', finalArticles.length);
-      // === ファイル書き込み ===
-      console.log('[scheduledNewsUpdate][SerpApi] ファイル書き込み');
       const bucket = storage.bucket('vtuber-335811.appspot.com');
-      const fileName = 'news.json';
-      const file = bucket.file(fileName);
-      const fileStream = file.createWriteStream({
+      const file = bucket.file('news.json');
+      await file.save(JSON.stringify(finalArticles), {
         metadata: {
-          contentType: 'application/json'
+          contentType: 'application/json',
+          cacheControl: 'public, max-age=600',
         },
-        timeout: 5400000,
+        resumable: false,
       });
-      await new Promise((resolve, reject) => {
-        const fileContents = JSON.stringify(finalArticles);
-        fileStream.on('finish', () => {
-          console.log('[scheduledNewsUpdate][SerpApi] news.json upload finish');
-          resolve();
-        });
-        fileStream.on('error', (err) => {
-          console.error('[scheduledNewsUpdate][SerpApi][upload ERROR]', err);
-          reject(err);
-        });
-        fileStream.end(fileContents);
-      });
+      console.log('[scheduledNewsUpdate] news.json upload finish:', finalArticles.length);
     } catch (error) {
-      console.error('[scheduledNewsUpdate][SerpApi][ERROR]', error);
+      console.error('[scheduledNewsUpdate][ERROR]', error);
     }
-    console.log('[scheduledNewsUpdate][SerpApi] end');
+    console.log('[scheduledNewsUpdate] end');
   });
 // ================================================  
 // All Video List取得処理の定義
@@ -1425,13 +1597,6 @@ exports.getTwitterData = functions.https.onRequest(async (request, response) => 
     response.status(500).json({ error: 'Something went wrong [rankingTwitterData]' });
   }
 });
-function formatDateSerpApi(dateStr) {
-  if (!dateStr) return '';
-  // 例: "08/21/2025, 06:52 AM, +0000 UTC"
-  const d = new Date(dateStr.replace(/, \\+\\d+ UTC$/, '')); // UTC部分を除去してDate化
-  const pad = n => n.toString().padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
 // ================================================  
 // Youtube 登録者数 取得処理の定義
 // ================================================
