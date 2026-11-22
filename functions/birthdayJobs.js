@@ -110,7 +110,8 @@ module.exports = function createBirthdayJobs({ functions, db, storage, getChanne
       await db.ref('meta/eventListLastBuild').set({ ...summary, skipped: true });
       return { ...summary, skipped: true };
     }
-    await bucket().file(EVENT_LIST_FILE).save(JSON.stringify([eventList], null, 2), {
+    await bucket().file(EVENT_LIST_FILE).save(JSON.stringify([eventList]), {
+      gzip: true,
       resumable: false,
       metadata: { contentType: 'application/json' },
     });

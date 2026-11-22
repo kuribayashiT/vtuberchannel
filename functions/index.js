@@ -23,6 +23,9 @@ let allChannelYoutubeApiInfoCache = null;
 // allvideos.json のメモリキャッシュ（30min CFが読み書き、GCSへの書き込みは毎回フル上書きで変わらず）
 let allvideosCache = null;
 let weeklyLiveViewRankingCache = null;
+// scheduledLiveDataUpdate(5min) 用: vtuber ツリーから作るチャンネルマップのキャッシュ（RTDB 転送量削減）
+let liveChannelMapCache = null;
+const LIVE_CHANNEL_MAP_TTL_MS = 30 * 60 * 1000;
 
 // 非同期でofficeMappingを取得しキャッシュする
 async function mapOfficeStringAsync(officeKey) {
@@ -73,6 +76,7 @@ const firestoreDB = admin.firestore();
 const Parser = require('rss-parser');
 const OpenAI = require('openai');
 const storage = admin.storage();
+const splitData = require('./splitData'); // Web 用の分割ファイル（GCS 転送量削減）
 
 // eventList.json 自動更新 / 誕生日の Wikipedia 補完（詳細は birthdayJobs.js）
 const birthdayJobs = require('./birthdayJobs')({
@@ -289,6 +293,7 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
             metadata: {
               contentType: 'application/json'
             },
+            gzip: true, // 転送量削減（fetch は自動で解凍する）
             resumable: false,  // 追記するために必要
             timeout: 540000,  // タイムアウトを調整（ミリ秒単位）
           });
@@ -303,7 +308,7 @@ exports.scheduledRealTimeDBToAllChannelYoutubeApiInfo = functions
           });
 
           // データ全体を一つのJSON配列にまとめる
-          const jsonArray = JSON.stringify(data, null, 2);
+          const jsonArray = JSON.stringify(data); // インデントなし（Next.js の 2MB キャッシュ上限に収めるため）
           // 配列全体を書き込む
           fileStream.write(jsonArray);
           fileStream.end();
@@ -1111,6 +1116,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
                 metadata: {
                   contentType: 'application/json'
                 },
+                gzip: true, // 転送量削減（fetch は自動で解凍する）
                 resumable: false,  // 追記するために必要
                 timeout: 540000,  // タイムアウトを調整（ミリ秒単位）
               });
@@ -1125,7 +1131,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               });
 
               // データ全体を一つのJSON配列にまとめる
-              const jsonArray = JSON.stringify(data, null, 2);
+              const jsonArray = JSON.stringify(data); // インデントなし（Next.js の 2MB キャッシュ上限に収めるため）
               // 配列全体を書き込む
               fileStream.write(jsonArray);
               fileStream.end();
@@ -1174,6 +1180,11 @@ exports.scheduledRealTimeDBToYoutubeData = functions
             } catch (error) {
               console.error('    == allvideosのデータの追記中にエラーが発生しました:', error);
             }
+            try {
+              if (allvideosCache) await splitData.writeVideoSplitFiles(bucket, allvideosCache);
+            } catch (error) {
+              console.error('    == streamVideos/videoShards の書き込み中にエラーが発生しました:', error);
+            }
 
             // youtubeSubscriberCountTransitionList/weeklyLiveViewRanking/rankingYoutubeRegiData/rankingVideoCountData/eventListは
             // scheduledRealTimeDBToAllChannelYoutubeApiInfo(24h)が担当するためスキップ
@@ -1185,6 +1196,11 @@ exports.scheduledRealTimeDBToYoutubeData = functions
               // console.log('    == officeDataListのデータの追記が完了しました');
             } catch (error) {
               console.error('    == officeDataListのデータの追記中にエラーが発生しました:', error);
+            }
+            try {
+              await splitData.writeVTuberSplitFiles(bucket, sortedOfficeList);
+            } catch (error) {
+              console.error('    == vtuberIndex/vtuberDetail の書き込み中にエラーが発生しました:', error);
             }
             // console.log("ファイルアップロード END");
           }
@@ -1198,6 +1214,7 @@ exports.scheduledRealTimeDBToYoutubeData = functions
 exports.clearChannelCache = functions.https.onRequest(async (req, res) => {
   allChannelYoutubeApiInfoCache = null;
   allvideosCache = null;
+  liveChannelMapCache = null;
   officeMappingCache = null;
   officeMappingCachePromise = null;
   console.log('clearChannelCache: all in-memory caches cleared');
@@ -1398,6 +1415,7 @@ async function appendNewsArchiveByMonth(bucket, monthKey, freshArticles) {
   const merged = Array.from(mergedByUrl.values()).sort(sortNewsByPublishedAtDesc);
   const file = bucket.file(`news/archive/${monthKey}.json`);
   await file.save(JSON.stringify(merged), {
+    gzip: true,
     metadata: {
       contentType: 'application/json',
       cacheControl: 'public, max-age=3600',
@@ -1565,6 +1583,7 @@ exports.scheduledNewsSourceAudit = functions
       }
 
       await bucket.file('newsSourceScores.json').save(JSON.stringify(scores), {
+        gzip: true,
         metadata: {
           contentType: 'application/json',
           cacheControl: 'public, max-age=3600',
@@ -1813,6 +1832,7 @@ exports.scheduledNewsUpdate = functions
       const bucket = storage.bucket('vtuber-335811.appspot.com');
       const file = bucket.file('news.json');
       await file.save(JSON.stringify(finalArticles), {
+        gzip: true,
         metadata: {
           contentType: 'application/json',
           cacheControl: 'public, max-age=600',
@@ -3064,24 +3084,29 @@ exports.scheduledLiveDataUpdate = functions
     const HOLODEX_API_KEY = '6ec899dd-bb7d-4af2-80eb-6635c37356e9';
     const bucket = storage.bucket('vtuber-335811.appspot.com');
     try {
-      // 1. Firebase登録済みVTuberのチャンネルIDマップを取得
-      const vtuberSnap = await db.ref('vtuber').once('value');
-      const vtuberDict = vtuberSnap.val() || {};
-      const channelMap = {};
-      for (const key in vtuberDict) {
-        if (key === 'updateTime') continue;
-        const v = vtuberDict[key];
-        if (v && v.channeID) {
-          channelMap[v.channeID] = {
-            office: v.office || '',
-            thumbnailUrl: v.thumbnailUrl || '',
-          };
+      // 1. Firebase登録済みVTuberのチャンネルIDマップ / officeMapping を取得
+      //    vtuber ツリー全体の読み込みは RTDB の転送量課金が大きいため 30 分キャッシュする
+      //    （新規登録 VTuber のライブ反映が最大 30 分遅れるのみ）
+      if (!liveChannelMapCache || Date.now() - liveChannelMapCache.at > LIVE_CHANNEL_MAP_TTL_MS) {
+        const [vtuberSnap, mappingSnap] = await Promise.all([
+          db.ref('vtuber').once('value'),
+          db.ref('officeMapping').once('value'),
+        ]);
+        const vtuberDict = vtuberSnap.val() || {};
+        const map = {};
+        for (const key in vtuberDict) {
+          if (key === 'updateTime') continue;
+          const v = vtuberDict[key];
+          if (v && v.channeID) {
+            map[v.channeID] = {
+              office: v.office || '',
+              thumbnailUrl: v.thumbnailUrl || '',
+            };
+          }
         }
+        liveChannelMapCache = { at: Date.now(), channelMap: map, officeMapping: mappingSnap.val() || {} };
       }
-
-      // officeMappingを取得（officeKey→日本語名変換用）
-      const mappingSnap = await db.ref('officeMapping').once('value');
-      const officeMapping = mappingSnap.val() || {};
+      const { channelMap, officeMapping } = liveChannelMapCache;
 
       // 2. Holodexからすべてのライブストリームをページング取得
       let allLive = [];
@@ -3140,7 +3165,8 @@ exports.scheduledLiveDataUpdate = functions
 
       // 4. GCSのlivevideoList.jsonに書き込み
       const file = bucket.file('livevideoList.json');
-      await file.save(JSON.stringify(liveVideos, null, 2), {
+      await file.save(JSON.stringify(liveVideos), {
+        gzip: true,
         metadata: {
           contentType: 'application/json',
           cacheControl: 'public, max-age=60',
@@ -3185,7 +3211,8 @@ exports.scheduledLiveDataUpdate = functions
       );
       weeklyLiveViewRanking.sort((a, b) => parseInt(b.concurrent_viewers) - parseInt(a.concurrent_viewers));
 
-      await weeklyFile.save(JSON.stringify(weeklyLiveViewRanking, null, 2), {
+      await weeklyFile.save(JSON.stringify(weeklyLiveViewRanking), {
+        gzip: true,
         metadata: { contentType: 'application/json' },
         resumable: false,
       });
