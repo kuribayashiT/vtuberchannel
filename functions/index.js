@@ -1293,9 +1293,14 @@ const NEWS_SOURCE_AUDIT_MARKERS = [
   'amazon-adsystem',
 ];
 const GNEWS_QUERIES = [
-  'ぶいすぽ OR ネオポルテ OR ななしいんく OR 774inc OR .LIVE',
+  'ぶいすぽ OR ネオポルテ OR ななしいんく OR 774inc OR どっとライブ',
   'VTuber デビュー OR 個人勢VTuber',
 ];
+const VTUBER_KEYWORDS_RE = /(VTuber|Vtuber|ブイチューバー|バーチャル|Vぷろ|ホロライブ|hololive|にじさんじ|NIJISANJI|ぶいすぽ|ネオポルテ|ななしいんく|774inc|どっとライブ|アップランド)/i;
+const VTUBER_MEDIA_SOURCE_NAMES = new Set(
+  ['PANORA', 'MoguLive', 'Mogura VR', 'MoguraVR'].map(normalizeSourceName)
+);
+const VTUBER_MEDIA_HOSTS = ['panora.tokyo', 'moguravr.com', 'www.moguravr.com'];
 
 const jstDateTimeFormatter = new Intl.DateTimeFormat('ja-JP', {
   timeZone: 'Asia/Tokyo',
@@ -1642,6 +1647,25 @@ function isNoiseNewsArticle(article, nowMs) {
   return nowMs - publishedMs > NEWS_MAX_AGE_MS;
 }
 
+function isVtuberMediaNewsArticle(article) {
+  const normalizedChannel = normalizeSourceName(article.channel);
+  if (VTUBER_MEDIA_SOURCE_NAMES.has(normalizedChannel)) return true;
+
+  if (isSafeHttpUrl(article.url)) {
+    const host = getHostname(article.url);
+    if (VTUBER_MEDIA_HOSTS.some(target => hostMatches(host, target))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isRelevantGoogleNewsArticle(article) {
+  if (article.origin !== 'gnews') return true;
+  const title = (article.title || '').trim();
+  return VTUBER_KEYWORDS_RE.test(title) || isVtuberMediaNewsArticle(article);
+}
+
 function extractSourceText(source) {
   if (!source) return '';
   if (typeof source === 'string') return source.trim();
@@ -1767,7 +1791,7 @@ async function fetchGoogleNewsRss() {
       });
     }
   }
-  return all;
+  return all.filter(isRelevantGoogleNewsArticle);
 }
 
 exports.scheduledNewsUpdate = functions
@@ -1818,6 +1842,7 @@ exports.scheduledNewsUpdate = functions
       const nowMs = Date.now();
       const sorted = titleDeduped
         .filter(article => !isNoiseNewsArticle(article, nowMs))
+        .filter(isRelevantGoogleNewsArticle)
         .sort((a, b) => parseNewsDateMs(b.publishedAt) - parseNewsDateMs(a.publishedAt));
 
       const urlSet = new Set();
