@@ -22,7 +22,8 @@ const SHARD_COUNT = 64;
 const TRANSITION_DAYS = 30;
 const STREAM_PAST_LIMIT = 100;
 const STREAM_FUTURE_DAYS = 9;
-const STREAM_FIELDS = ['videoID', 'title', 'channelId', 'channelTitle', 'thumbnail', 'comparisonDay'];
+const WEEKLY_TOP_LIMIT = 500;
+const STREAM_FIELDS =['videoID', 'title', 'channelId', 'channelTitle', 'thumbnail', 'comparisonDay'];
 
 // ファイル名 → 前回書き込んだ内容のハッシュ（インスタンス内のみ。コールドスタート時は全件書く）
 const lastHashes = new Map();
@@ -67,8 +68,10 @@ function buildVTuberFiles(officeList) {
   const shards = {};
   for (const [office, list] of Object.entries(officeList || {})) {
     index[office] = (list || []).map((v) => {
+      // Web で使わない項目は落とす（Next.js はキャッシュ時に base64 化するため実質 1.5MB が上限）
       // eslint-disable-next-line no-unused-vars
-      const { videos, youtubeSubscriberCountTransition, twitterSubscriberCountTransition, ...rest } = v;
+      const { videos, youtubeSubscriberCountTransition, twitterSubscriberCountTransition,
+        youtubeChId, createdAt, updateTime, twicasID, twitterID, twitterName, ...rest } = v;
       const transition = lastEntries(youtubeSubscriberCountTransition, TRANSITION_DAYS);
       const dates = Object.keys(transition);
       const id = channelIdOf(v);
@@ -76,7 +79,7 @@ function buildVTuberFiles(officeList) {
         const s = shardOf(id);
         (shards[s] ||= {})[id] = { videos: videos || {}, youtubeSubscriberCountTransition: transition };
       }
-      return { ...rest, latestTransitionDate: dates.length ? dates[dates.length - 1] : '' };
+      return { ...rest, channeID: id, latestTransitionDate: dates.length ? dates[dates.length - 1] : '' };
     });
   }
   return { index, shards };
@@ -134,7 +137,19 @@ async function writeVideoSplitFiles(bucket, allvideos) {
   console.log(`[splitData] streamVideos 更新, videoShards ${n}/${SHARD_COUNT} シャード書き込み`);
 }
 
+/** weeklyLiveViewRanking の同時視聴者数上位だけを Web 用に書き出す（元ファイルは 2MB 近くありキャッシュできない） */
+async function writeWeeklyLiveViewTop(bucket, ranking) {
+  const top = [...(ranking || [])]
+    .sort((a, b) => (parseInt(b.concurrent_viewers, 10) || 0) - (parseInt(a.concurrent_viewers, 10) || 0))
+    .slice(0, WEEKLY_TOP_LIMIT);
+  await saveJsonGz(bucket, 'weeklyLiveViewTop.json', top, {
+    cacheControl: 'public, max-age=60',
+    skipUnchanged: true,
+  });
+}
+
 module.exports = {
+  writeWeeklyLiveViewTop,
   SHARD_COUNT,
   shardOf,
   saveJsonGz,

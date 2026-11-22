@@ -3218,6 +3218,11 @@ exports.scheduledLiveDataUpdate = functions
       });
       // GCS書き込み後にメモリキャッシュを更新（次回の読み込みコストを削減）
       weeklyLiveViewRankingCache = [...weeklyLiveViewRanking];
+      try {
+        await splitData.writeWeeklyLiveViewTop(bucket, weeklyLiveViewRanking);
+      } catch (e) {
+        console.warn('[LiveUpdate] weeklyLiveViewTop書き込みエラー:', e.message);
+      }
 
       console.log(`[LiveUpdate] Holodex live: ${allLive.length}件 → 登録済み: ${liveVideos.length}件 / weekly: ${weeklyLiveViewRanking.length}件`);
     } catch (error) {
